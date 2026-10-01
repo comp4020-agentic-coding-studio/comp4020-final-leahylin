@@ -2,111 +2,81 @@
 
 Find someone to do the thing with, today.
 
-An activity buddy is someone to go running with, grab lunch with, or get a
-coffee with. They are not a friend you have to keep up. You share one activity with them, and that's
-the whole relationship. This app is for finding one.
-
-You pick an interest (running, badminton or coffee), see what's on, and either
-join a meetup or start one: *Tuesday 6pm, Black Mountain summit track, 4
-people, easy pace*. Anyone who joins can see who else is coming.
-
-This is version one (crit 8). It covers the core loop and nothing else.
+An activity buddy is someone you share one activity with, not a friend you
+have to keep up. Pick running, badminton or coffee, then join a meetup or
+start one: *Tuesday 6pm, Black Mountain, 4 people, easy pace*.
 
 ## What good means here
 
-A good buddy app makes the gap between *I'd like to go for a run with someone*
-and *I'm at the start line with two people* as short as possible. It doesn't
-matter how many people sign up or how long they stay on the page. What matters
-is how many meetups actually happen.
+A good buddy app shortens the gap between *I'd like a running buddy* and
+*I'm at the start line*. What counts is meetups that happen, not sign-ups.
+Four commitments:
 
-That gives four commitments:
-
-1. **Every meetup is concrete.** It has an activity, a time, a place and a
-   head count. "Anyone keen for coffee sometime?" can't be posted here,
-   because it's the kind of plan that never happens.
-2. **Everything is near.** A meetup starts within the next seven days, and it
-   happens on or around the ANU campus. A plan a month away isn't a buddy plan.
-3. **Joining is one action, and so is leaving.** You don't apply, request,
-   wait for approval or message anyone first. Leaving is just as easy, so
-   people back out properly instead of silently not turning up. The spot goes
-   back to someone else, and nothing records that you left.
-4. **The head count is real.** A meetup for four never has five. The host
-   picked that number for a reason: badminton is doubles, a coffee table
-   seats four.
+1. **Every meetup is concrete:** an activity, a time, a place and a head
+   count. "Coffee sometime?" can't be posted, because it never happens.
+2. **Everything is near:** within the next seven days, on or around the ANU
+   campus.
+3. **Joining is one action, and so is leaving.** No approval. Easy leaving
+   means people back out instead of not turning up; the spot goes back and
+   nothing records it.
+4. **The head count is real.** Four never becomes five: badminton is doubles.
 
 ## Who it's for
 
-ANU students who want company for something they'd do anyway. It's especially
-for people who are new to Canberra, or whose friends don't run, or who would
-rather not post "anyone?" in a 500-person group chat. The showcase room counts
-too: a room full of people who could all be buddies for the next hour.
+ANU students who want company for something they'd do anyway: people new to
+Canberra, whose friends don't run, or who'd rather not post "anyone?" in a
+500-person group chat. Also the showcase room, full of possible buddies.
 
 ## What I chose not to build
 
-- **Accounts.** You give a nickname and the app remembers you in this
-  browser. An activity buddy is a light connection, so the way in should be light too.
-- **Direct messages.** The point is to meet in person. Anything a group needs
-  to say before it meets will be said where everyone in the meetup can see it
-  (planned for crit 9).
-- **Profiles, followers, likes, ratings.** Nobody gets scored. A rating after
-  a coffee would turn a casual thing into an audition.
-- **Search, maps, recommendations.** There's one campus and a few interests.
-  A plain list sorted by start time is enough.
-- **Friend lists or "people you ran with".** That would push the app toward
-  being a social network, and the pressure that comes with one.
+- **Accounts.** A nickname your browser remembers; a light connection needs
+  a light way in.
+- **Direct messages.** The point is to meet. Group notes come in crit 9.
+- **Profiles, followers, likes, ratings.** Rating a coffee turns it into an
+  audition.
+- **Search, maps, recommendations.** One campus; a list by time is enough.
+- **Friend lists or "people you ran with".** They push toward being a social
+  network.
 
 ## What persists and what doesn't
 
-- **Your nickname** stays with your browser for a year.
-- **Meetups and who joined them** are kept. Upcoming meetups are the main
-  page. Ones that have finished move into a short log under each interest,
-  like a club's activity book: *3 Oct · Black Mountain · 4 ran*.
-- **Leaving a meetup** removes you from it completely. There is no
-  "left" or "flaked" history.
+- **Your nickname** stays in your browser for a year.
+- **Meetups and who joined** are kept. Finished ones move into a short log
+  under each interest: *3 Oct · Black Mountain · 4 went*.
+- **Leaving** removes you completely. There's no "left" or "flaked" history.
 
 ## How good is checked
 
-Some of this can be tested, and `spec/` tests it against the running app:
+These are tested in `spec/`, against the running app:
 
-- a meetup without a time, place or head count is refused (commitment 1)
-- a meetup in the past, or more than seven days ahead, is refused
-  (commitment 2)
-- joining and leaving each take a single request, and leaving frees the spot
-  (commitment 3)
-- a full meetup refuses one more person, even when requests arrive together
-  (commitment 4)
-- when the host edits a meetup, it says exactly what changed (time changed,
-  place changed, head count changed, note changed), and nothing that didn't
-- a meetup and its people are still there on a fresh visit (persistence)
+- a meetup without a time, place or head count is refused
+- a meetup in the past or more than seven days ahead is refused
+- joining and leaving each take one request, and leaving frees the spot
+- a full meetup refuses one more person, even with simultaneous requests
+- an edited meetup says exactly what changed (time, place, head count, note),
+  and nothing else
+- a meetup and its people are still there on a fresh visit
 
-Some can only be judged:
+These can only be judged:
 
-- *Is it actually quick to go from opening the app to having joined?* I'm
-  judging this by watching people in my pod try it, and timing it.
-- *Does the app feel light?* Can you join a coffee with strangers without it
-  feeling like a commitment? This one is for the crit to tell me.
-- *Do meetups happen?* The app can't know yet. Crit 9 plans to add a check-in
-  at the meetup, which turns this into a number I can count.
+- *Is joining quick?* I'll time people in my pod.
+- *Does it feel light?* The crit will tell me.
+- *Do meetups happen?* Crit 9's check-in will make it countable.
 
 ## What I read and looked at
 
 - Robin Sloan, [*An app can be a home-cooked meal*](https://www.robinsloan.com/notes/home-cooked-app/)
-  (2020). Software made for a handful of specific people can be good by
-  standards that would make no sense for a product.
+  (2020). Software for a few specific people can be good by standards that
+  make no sense for a product.
 - Clay Shirky, [*Situated Software*](https://gwern.net/doc/technology/2004-03-30-shirky-situatedsoftware.html)
-  (2004). Software built for one group, in one place, can lean on the social
-  context it lives in instead of rebuilding it. Here that context is the
-  campus and the fact that everyone is a student.
+  (2004). Software for one group in one place can lean on its context: here,
+  the campus.
 - Darius Kazemi, [*Run your own social*](https://runyourown.social/) (2019).
-  A small, deliberately limited social space is a choice and not a failure to
-  scale.
-- Meetup, Strava clubs, and "looking for a buddy" posts on Xiaohongshu (RedNote). These
-  are the median answers. Meetup is built for organisers planning weeks out.
-  Strava is built around your stats. RedNote posts are an open call to the
-  whole internet. I wanted the opposite of each: near, numberless, local.
+  A small, limited social space is a choice, not a failure to scale.
+- Meetup, Strava clubs and rednote "buddy" posts: the median answers
+  (weeks ahead, stats, the whole internet). I wanted near, numberless, local.
 
 ## Status
 
-Crit 8: you can pick an interest, start a meetup, join one, leave one, and
-find all of it still there when you come back. Real-time updates, the
-in-meetup notice board, the meeting-point detail and check-ins come next.
+Crit 8: start, join, leave or edit a meetup; it's still there when you come
+back. Next: real-time updates, meeting points, a notice board, check-in.
