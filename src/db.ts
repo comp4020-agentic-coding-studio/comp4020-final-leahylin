@@ -46,8 +46,11 @@ db.exec(`
 
 // Additive migrations: SQLite has no ADD COLUMN IF NOT EXISTS, so check first.
 function addColumn(table: string, column: string, type: string): void {
-  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
-  if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as {
+    name: string;
+  }[];
+  if (!cols.some((c) => c.name === column))
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
 }
 // when the host last changed the time or place after people could see it,
 // so everyone going can tell what changed
@@ -90,13 +93,21 @@ const meetupCols = `
   (SELECT COUNT(*) FROM joins j WHERE j.meetup_id = m.id) AS going`;
 
 const q = {
-  personByToken: db.prepare("SELECT id, token, name FROM people WHERE token = ?"),
-  insertPerson: db.prepare("INSERT INTO people (token, name, created_at) VALUES (?, ?, ?) RETURNING id, token, name"),
+  personByToken: db.prepare(
+    "SELECT id, token, name FROM people WHERE token = ?",
+  ),
+  insertPerson: db.prepare(
+    "INSERT INTO people (token, name, created_at) VALUES (?, ?, ?) RETURNING id, token, name",
+  ),
   renamePerson: db.prepare("UPDATE people SET name = ? WHERE id = ?"),
-  meetup: db.prepare(`SELECT ${meetupCols} FROM meetups m JOIN people h ON h.id = m.host_id WHERE m.id = ?`),
-  upcoming: db.prepare(`SELECT ${meetupCols} FROM meetups m JOIN people h ON h.id = m.host_id
+  meetup: db.prepare(
+    `SELECT ${meetupCols} FROM meetups m JOIN people h ON h.id = m.host_id WHERE m.id = ?`,
+  ),
+  upcoming:
+    db.prepare(`SELECT ${meetupCols} FROM meetups m JOIN people h ON h.id = m.host_id
     WHERE m.interest = ? AND m.cancelled_at IS NULL AND m.starts_at > ? ORDER BY m.starts_at`),
-  finished: db.prepare(`SELECT ${meetupCols} FROM meetups m JOIN people h ON h.id = m.host_id
+  finished:
+    db.prepare(`SELECT ${meetupCols} FROM meetups m JOIN people h ON h.id = m.host_id
     WHERE m.interest = ? AND m.cancelled_at IS NULL AND m.starts_at <= ? ORDER BY m.starts_at DESC LIMIT 20`),
   countUpcoming: db.prepare(`SELECT interest, COUNT(*) AS n FROM meetups
     WHERE cancelled_at IS NULL AND starts_at > ? GROUP BY interest`),
@@ -105,17 +116,39 @@ const q = {
   mine: db.prepare(`SELECT ${meetupCols}, me.joined_at AS joined_at FROM meetups m JOIN people h ON h.id = m.host_id
     JOIN joins me ON me.meetup_id = m.id AND me.person_id = ?
     WHERE m.starts_at > ? AND (m.cancelled_at IS NULL OR m.starts_at > ?) ORDER BY m.starts_at`),
-  people: db.prepare(`SELECT p.id, p.name FROM joins j JOIN people p ON p.id = j.person_id
+  people:
+    db.prepare(`SELECT p.id, p.name FROM joins j JOIN people p ON p.id = j.person_id
     WHERE j.meetup_id = ? ORDER BY j.joined_at`),
-  isGoing: db.prepare("SELECT 1 FROM joins WHERE meetup_id = ? AND person_id = ?"),
-  insertMeetup: db.prepare(`INSERT INTO meetups (interest, host_id, starts_at, place, capacity, note, created_at)
+  isGoing: db.prepare(
+    "SELECT 1 FROM joins WHERE meetup_id = ? AND person_id = ?",
+  ),
+  insertMeetup:
+    db.prepare(`INSERT INTO meetups (interest, host_id, starts_at, place, capacity, note, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`),
-  insertJoin: db.prepare("INSERT INTO joins (meetup_id, person_id, joined_at) VALUES (?, ?, ?)"),
-  deleteJoin: db.prepare("DELETE FROM joins WHERE meetup_id = ? AND person_id = ?"),
-  cancel: db.prepare("UPDATE meetups SET cancelled_at = ? WHERE id = ? AND cancelled_at IS NULL"),
-  update: db.prepare(`UPDATE meetups SET starts_at = ?, place = ?, capacity = ?, note = ?,
+  insertJoin: db.prepare(
+    "INSERT INTO joins (meetup_id, person_id, joined_at) VALUES (?, ?, ?)",
+  ),
+  deleteJoin: db.prepare(
+    "DELETE FROM joins WHERE meetup_id = ? AND person_id = ?",
+  ),
+  cancel: db.prepare(
+    "UPDATE meetups SET cancelled_at = ? WHERE id = ? AND cancelled_at IS NULL",
+  ),
+  update:
+    db.prepare(`UPDATE meetups SET starts_at = ?, place = ?, capacity = ?, note = ?,
     time_changed_at = ?, place_changed_at = ?, capacity_changed_at = ?, note_changed_at = ? WHERE id = ?`),
 };
+
+// joined_at and the *_changed_at columns only ever get compared against each
+// other (never shown to a user), so what matters is that they strictly
+// reflect call order. Date.now() alone doesn't: two requests in the same
+// millisecond would tie, and a tie reads as "not after", hiding a real edit
+// from someone who joined moments before it.
+let clock = 0;
+function tick(now: number): number {
+  clock = now > clock ? now : clock + 1;
+  return clock;
+}
 
 function tx<T>(fn: () => T): T {
   db.exec("BEGIN IMMEDIATE");
@@ -158,7 +191,10 @@ export function finished(interest: string, now: number): Meetup[] {
 
 export function upcomingCounts(now: number): Record<string, number> {
   const out: Record<string, number> = {};
-  for (const row of q.countUpcoming.all(now - RUNS_FOR_MS) as { interest: string; n: number }[]) {
+  for (const row of q.countUpcoming.all(now - RUNS_FOR_MS) as {
+    interest: string;
+    n: number;
+  }[]) {
     out[row.interest] = row.n;
   }
   return out;
@@ -191,10 +227,18 @@ export interface NewMeetup {
 export function createMeetup(m: NewMeetup): number {
   return tx(() => {
     const now = Date.now();
-    const { id } = q.insertMeetup.get(m.interest, m.hostId, m.startsAt, m.place, m.capacity, m.note, now) as {
+    const { id } = q.insertMeetup.get(
+      m.interest,
+      m.hostId,
+      m.startsAt,
+      m.place,
+      m.capacity,
+      m.note,
+      now,
+    ) as {
       id: number;
     };
-    q.insertJoin.run(id, m.hostId, now);
+    q.insertJoin.run(id, m.hostId, tick(now));
     return id;
   });
 }
@@ -203,14 +247,18 @@ export type JoinResult = "joined" | "already" | "full" | "closed" | "missing";
 
 // Capacity is checked and the row inserted in one IMMEDIATE transaction, so
 // two people can't both take the last spot.
-export function join(meetupId: number, personId: number, now: number): JoinResult {
+export function join(
+  meetupId: number,
+  personId: number,
+  now: number,
+): JoinResult {
   return tx(() => {
     const m = getMeetup(meetupId);
     if (!m) return "missing";
     if (m.cancelled_at !== null || m.starts_at <= now) return "closed";
     if (isGoing(meetupId, personId)) return "already";
     if (m.going >= m.capacity) return "full";
-    q.insertJoin.run(meetupId, personId, now);
+    q.insertJoin.run(meetupId, personId, tick(now));
     return "joined";
   });
 }
@@ -234,21 +282,26 @@ export type EditResult = "saved" | "too_small" | "closed" | "missing";
 
 // The head count can't go below the people already going: nobody who joined
 // gets pushed out. Checked in the same transaction as the update.
-export function editMeetup(meetupId: number, e: MeetupEdit, now: number): EditResult {
+export function editMeetup(
+  meetupId: number,
+  e: MeetupEdit,
+  now: number,
+): EditResult {
   return tx(() => {
     const m = getMeetup(meetupId);
     if (!m) return "missing";
     if (m.cancelled_at !== null || m.starts_at <= now) return "closed";
     if (e.capacity < m.going) return "too_small";
+    const when = tick(now);
     q.update.run(
       e.startsAt,
       e.place,
       e.capacity,
       e.note,
-      e.startsAt !== m.starts_at ? now : m.time_changed_at,
-      e.place !== m.place ? now : m.place_changed_at,
-      e.capacity !== m.capacity ? now : m.capacity_changed_at,
-      e.note !== m.note ? now : m.note_changed_at,
+      e.startsAt !== m.starts_at ? when : m.time_changed_at,
+      e.place !== m.place ? when : m.place_changed_at,
+      e.capacity !== m.capacity ? when : m.capacity_changed_at,
+      e.note !== m.note ? when : m.note_changed_at,
       meetupId,
     );
     return "saved";
