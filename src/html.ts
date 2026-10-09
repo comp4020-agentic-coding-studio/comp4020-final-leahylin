@@ -52,6 +52,9 @@ button.link{all:unset;color:var(--link);text-decoration:underline;cursor:pointer
 button.link:focus-visible{outline:2px solid var(--link);outline-offset:2px}
 .invite{font-family:ui-monospace,Menlo,monospace;font-size:14px;background:var(--soft)}
 .inline-gap{margin:12px 0}
+.later>span:first-child{flex:1}
+.row-actions{display:flex;gap:8px;flex-wrap:wrap}
+.count{color:var(--link);font-weight:700}
 .auth-actions{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}
 button,.button{font:inherit;font-weight:700;border:0;border-radius:999px;min-height:44px;padding:0 20px;background:var(--c,var(--accent));color:#FFFFFF;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
 button.quiet,a.button.quiet{background:transparent;color:var(--muted);border:1px solid #D8CDBE;font-weight:500;padding:0 16px}
@@ -259,18 +262,22 @@ const LIVE_JS = `
 })();
 `;
 
+export type Who = { name: string; requests: number } | null;
+
 export function page(opts: {
   title: string;
   body: string;
-  who?: string | null;
+  // the signed-in person's display name, plus how many friend requests wait
+  who?: Who;
   colour?: string;
   // Only pages rendered by a GET that returned 200 pass topics. An error page
   // rendered from a POST sits at a URL that isn't GET-able, so re-fetching it
   // would 404 — and on the host form's 400 it would wipe what someone typed.
   topics?: string[];
 }): string {
+  const requests = opts.who?.requests ?? 0;
   const who = opts.who
-    ? `<span class="who">${opts.topics?.length ? `<span class="live-dot" title="Live"></span>` : ""}Hey <b>${esc(opts.who)}</b> · <a href="/me">change</a> · <form class="inline" method="post" action="/logout"><button class="link">Log out</button></form></span>`
+    ? `<span class="who">${opts.topics?.length ? `<span class="live-dot" title="Live"></span>` : ""}Hey <b>${esc(opts.who.name)}</b> · <a href="/me">change</a> · <form class="inline" method="post" action="/logout"><button class="link">Log out</button></form></span>`
     : `<span class="who"><a href="/login">Log in</a></span>`;
   const style = opts.colour ? ` style="--c:${esc(opts.colour)}"` : "";
   const live = opts.topics?.length
@@ -292,7 +299,7 @@ export function page(opts: {
 <style>${CSS}</style>
 </head>
 <body${style}${live}>
-<header class="site"><div class="bar"><a class="brand" href="/">Buddy Up</a><nav class="nav" aria-label="Interests">${INTERESTS.map((i) => `<a href="/i/${i.slug}">${esc(i.name)}</a>`).join("")}<a href="/circles">Circles</a><a href="/readme/">About</a></nav>${who}</div></header>
+<header class="site"><div class="bar"><a class="brand" href="/">Buddy Up</a><nav class="nav" aria-label="Interests">${INTERESTS.map((i) => `<a href="/i/${i.slug}">${esc(i.name)}</a>`).join("")}<a href="/circles">Circles</a><a href="/friends">${requests ? `Friends <span class="count">(${requests})</span>` : "Friends"}</a><a href="/readme/">About</a></nav>${who}</div></header>
 <main class="wrap">
 ${opts.body}
 </main>

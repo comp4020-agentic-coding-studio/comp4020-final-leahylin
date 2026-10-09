@@ -552,3 +552,149 @@ export function resetInvite(circleId: number, personId: number): boolean {
     return true;
   });
 }
+
+// ---- Friends (decision 4, step 3) ----
+// Both ways: a request, then an accept. Declining or removing tells no one
+// and leaves no record, like leaving a meetup. The one thing remembered is
+// when a request was last sent, so nobody can ask the same person again and
+// again: once a week at most.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS friend_requests (
+    from_id    INTEGER NOT NULL REFERENCES people(id),
+    to_id      INTEGER NOT NULL REFERENCES people(id),
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (from_id, to_id)
+  );
+  CREATE INDEX IF NOT EXISTS friend_requests_to ON friend_requests (to_id);
+
+  -- a pair is stored once, smaller id first
+  CREATE TABLE IF NOT EXISTS friendships (
+    a_id       INTEGER NOT NULL REFERENCES people(id),
+    b_id       INTEGER NOT NULL REFERENCES people(id),
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (a_id, b_id),
+    CHECK (a_id < b_id)
+  );
+  CREATE INDEX IF NOT EXISTS friendships_b ON friendships (b_id);
+
+  CREATE TABLE IF NOT EXISTS friend_request_sends (
+    from_id INTEGER NOT NULL,
+    to_id   INTEGER NOT NULL,
+    at      INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS friend_request_sends_pair ON friend_request_sends (from_id, to_id, at);
+`);
+
+export const ASK_AGAIN_MS = 7 * 24 * 60 * 60 * 1000;
+
+export interface Someone {
+  id: number;
+  username: string;
+  name: string;
+}
+
+const fq = {
+  byUsername: db.prepare("SELECT id, username, name FROM people WHERE username = ?"),
+  areFriends: db.prepare("SELECT 1 FROM friendships WHERE a_id = ? AND b_id = ?"),
+  pending: db.prepare("SELECT 1 FROM friend_requests WHERE from_id = ? AND to_id = ?"),
+  lastSend: db.prepare("SELECT MAX(at) AS at FROM friend_request_sends WHERE from_id = ? AND to_id = ?"),
+  insertRequest: db.prepare("INSERT INTO friend_requests (from_id, to_id, created_at) VALUES (?, ?, ?)"),
+  logSend: db.prepare("INSERT INTO friend_request_sends (from_id, to_id, at) VALUES (?, ?, ?)"),
+  deleteRequest: db.prepare("DELETE FROM friend_requests WHERE from_id = ? AND to_id = ?"),
+  insertFriendship: db.prepare(
+    "INSERT OR IGNORE INTO friendships (a_id, b_id, created_at) VALUES (?, ?, ?)",
+  ),
+  deleteFriendship: db.prepare("DELETE FROM friendships WHERE a_id = ? AND b_id = ?"),
+  incoming: db.prepare(
+    `SELECT p.id, p.username, p.name FROM friend_requests r JOIN people p ON p.id = r.from_id
+     WHERE r.to_id = ? ORDER BY r.created_at`,
+  ),
+  outgoing: db.prepare(
+    `SELECT p.id, p.username, p.name FROM friend_requests r JOIN people p ON p.id = r.to_id
+     WHERE r.from_id = ? ORDER BY r.created_at`,
+  ),
+  incomingCount: db.prepare("SELECT COUNT(*) AS n FROM friend_requests WHERE to_id = ?"),
+  friends: db.prepare(
+    `SELECT p.id, p.username, p.name FROM friendships f
+     JOIN people p ON p.id = CASE WHEN f.a_id = ? THEN f.b_id ELSE f.a_id END
+     WHERE f.a_id = ? OR f.b_id = ? ORDER BY p.name COLLATE NOCASE`,
+  ),
+};
+
+function pair(x: number, y: number): [number, number] {
+  return x < y ? [x, y] : [y, x];
+}
+
+export function personByUsername(username: string): Someone | null {
+  return (fq.byUsername.get(username) as Someone | undefined) ?? null;
+}
+
+export function areFriends(x: number, y: number): boolean {
+  return fq.areFriends.get(...pair(x, y)) !== undefined;
+}
+
+export type FriendAsk =
+  | { result: "sent" | "became_friends" | "already_friends" | "already_asked"; who: Someone }
+  | { result: "too_soon"; who: Someone; until: number }
+  | { result: "self" }
+  | { result: "missing" };
+
+export function askFriend(fromId: number, username: string, now: number): FriendAsk {
+  return tx(() => {
+    const who = personByUsername(username);
+    if (!who) return { result: "missing" };
+    if (who.id === fromId) return { result: "self" };
+    if (areFriends(fromId, who.id)) return { result: "already_friends", who };
+    // they already asked you: you both want it
+    if (fq.pending.get(who.id, fromId) !== undefined) {
+      fq.deleteRequest.run(who.id, fromId);
+      fq.insertFriendship.run(...pair(fromId, who.id), now);
+      return { result: "became_friends", who };
+    }
+    if (fq.pending.get(fromId, who.id) !== undefined) return { result: "already_asked", who };
+    const { at } = fq.lastSend.get(fromId, who.id) as { at: number | null };
+    if (at !== null && at > now - ASK_AGAIN_MS) return { result: "too_soon", who, until: at + ASK_AGAIN_MS };
+    fq.insertRequest.run(fromId, who.id, now);
+    fq.logSend.run(fromId, who.id, now);
+    return { result: "sent", who };
+  });
+}
+
+export function incomingRequests(personId: number): Someone[] {
+  return fq.incoming.all(personId) as unknown as Someone[];
+}
+
+export function outgoingRequests(personId: number): Someone[] {
+  return fq.outgoing.all(personId) as unknown as Someone[];
+}
+
+export function incomingCount(personId: number): number {
+  return (fq.incomingCount.get(personId) as { n: number }).n;
+}
+
+// Your friends, for your eyes only: nothing calls this with anyone else's id.
+export function friendsOf(personId: number): Someone[] {
+  return fq.friends.all(personId, personId, personId) as unknown as Someone[];
+}
+
+export function acceptFriend(personId: number, fromId: number, now: number): boolean {
+  return tx(() => {
+    if (fq.pending.get(fromId, personId) === undefined) return false;
+    fq.deleteRequest.run(fromId, personId);
+    fq.insertFriendship.run(...pair(personId, fromId), now);
+    return true;
+  });
+}
+
+// declining, cancelling and removing all just delete: nobody is told
+export function declineFriend(personId: number, fromId: number): void {
+  fq.deleteRequest.run(fromId, personId);
+}
+
+export function cancelFriendRequest(personId: number, toId: number): void {
+  fq.deleteRequest.run(personId, toId);
+}
+
+export function removeFriend(personId: number, otherId: number): void {
+  fq.deleteFriendship.run(...pair(personId, otherId));
+}

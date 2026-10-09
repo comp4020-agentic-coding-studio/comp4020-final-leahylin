@@ -1,4 +1,4 @@
-import type { Circle, Meetup, MyMeetup, Person } from "./db.ts";
+import type { Circle, Meetup, MyMeetup, Person, Someone } from "./db.ts";
 import { CIRCLE_MAX } from "./db.ts";
 import { INTERESTS, findInterest, type Interest } from "./interests.ts";
 import { esc } from "./html.ts";
@@ -463,4 +463,58 @@ ${
     : `<form method="post" action="/join/${esc(code)}"><button>Join ${esc(c.name)}</button></form>`
 }
 <p><a href="/circles">Not now</a></p>`;
+}
+
+// ---- Friends (decision 4, step 3) ----
+// Only ever rendered for the person whose friends these are.
+
+function someoneRow(p: Someone, buttons: string): string {
+  return `<li class="later"><span><b>${esc(p.name)}</b> <span class="hint">@${esc(p.username)}</span></span><span class="row-actions">${buttons}</span></li>`;
+}
+
+function smallForm(action: string, label: string, quiet = true): string {
+  return `<form class="inline" method="post" action="${action}"><button${quiet ? ' class="quiet"' : ""}>${label}</button></form>`;
+}
+
+export function friendsPage(
+  friends: Someone[],
+  incoming: Someone[],
+  outgoing: Someone[],
+  opts: { username?: string; error?: string; note?: string } = {},
+): string {
+  const asking = incoming.length
+    ? `<h2>Want to be your friend</h2><ul class="later-list">${incoming
+        .map((p) =>
+          someoneRow(p, smallForm(`/friends/${p.id}/accept`, "Accept", false) + " " + smallForm(`/friends/${p.id}/decline`, "Decline")),
+        )
+        .join("")}</ul>`
+    : "";
+  const sent = outgoing.length
+    ? `<h2>Waiting on</h2><ul class="later-list">${outgoing
+        .map((p) => someoneRow(p, smallForm(`/friends/${p.id}/cancel`, "Take it back")))
+        .join("")}</ul>`
+    : "";
+  const mine = friends.length
+    ? `<ul class="later-list">${friends
+        .map((p) => someoneRow(p, smallForm(`/friends/${p.id}/remove`, "Remove")))
+        .join("")}</ul>`
+    : `<p class="empty">No friends here yet. Ask someone for their username.</p>`;
+  return `
+<h1>Friends</h1>
+<p class="lede">Meetups you share with "my friends" go to these people, and no one else. Only you can see this list.</p>
+${opts.note ? `<p class="banner" role="status">${esc(opts.note)}</p>` : ""}
+<form method="post" action="/friends" id="add-friend" class="inline-gap">
+  <fieldset>
+    <legend>Add a friend</legend>
+    ${opts.error ? `<p class="error" role="alert">${esc(opts.error)}</p>` : ""}
+    <label for="friend-username">Their username</label>
+    <input id="friend-username" name="username" autocapitalize="none" required value="${esc(opts.username ?? "")}" placeholder="e.g. escaped_anu">
+    <p class="hint">Exact username only. There's no search, so ask them for it.</p>
+    <button type="submit">Send request</button>
+  </fieldset>
+</form>
+${asking}
+${sent}
+<h2>Your friends</h2>
+${mine}`;
 }

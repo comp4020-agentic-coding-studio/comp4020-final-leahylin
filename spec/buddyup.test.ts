@@ -729,3 +729,95 @@ describe("circles: a group joined by invite, at most 25", () => {
     expect((await post(`/c/${id}/reset`, {}, second.cookie)).status).toBe(303);
   });
 });
+
+// ---- Friends (decision 4, step 3) ----
+
+async function ask(fromCookie: string, username: string): Promise<Response> {
+  return post("/friends", { username }, fromCookie);
+}
+
+// The id the app uses for someone, read off the asker's own friends page.
+async function idOf(cookie: string, username: string): Promise<number> {
+  const html = await get("/friends", cookie);
+  const at = html.indexOf(`@${username}`);
+  expect(at).toBeGreaterThan(-1);
+  const id = /\/friends\/(\d+)\//.exec(html.slice(at))?.[1];
+  return Number(id);
+}
+
+async function befriend(a: { cookie: string }, b: { cookie: string; username: string }, aUsername: string): Promise<void> {
+  expect((await ask(a.cookie, b.username)).status).toBe(303);
+  const id = await idOf(b.cookie, aUsername);
+  expect((await post(`/friends/${id}/accept`, {}, b.cookie)).status).toBe(303);
+}
+
+describe("friends: both ways, and only you see yours", () => {
+  it("becomes friends when one asks and the other accepts", async () => {
+    const a = await person();
+    const b = await person();
+    expect((await ask(a.cookie, b.username)).status).toBe(303);
+    // b sees it waiting, with a count in the header
+    const bPage = await get("/friends", b.cookie);
+    expect(bPage).toContain("Want to be your friend");
+    expect(bPage).toContain(`@${a.username}`);
+    expect(bPage).toContain("Friends <span class=\"count\">(1)</span>");
+
+    const id = await idOf(b.cookie, a.username);
+    expect((await post(`/friends/${id}/accept`, {}, b.cookie)).status).toBe(303);
+    expect(await get("/friends", a.cookie)).toContain(`@${b.username}`);
+    expect(await get("/friends", b.cookie)).not.toContain("Want to be your friend");
+  });
+
+  it("says plainly when there's no such username, and won't add yourself", async () => {
+    const a = await person();
+    const missing = await ask(a.cookie, `nobody_${tag()}`);
+    expect(missing.status).toBe(404);
+    expect(await missing.text()).toContain("no one with the username");
+    expect((await ask(a.cookie, a.username)).status).toBe(400);
+  });
+
+  it("makes two people friends at once when they ask each other", async () => {
+    const a = await person();
+    const b = await person();
+    expect((await ask(a.cookie, b.username)).status).toBe(303);
+    const both = await ask(b.cookie, a.username);
+    expect(both.headers.get("location")).toBe("/friends?done=friends");
+    expect(await get("/friends", a.cookie)).toContain(`@${b.username}`);
+  });
+
+  it("declines quietly, and won't let the same person ask again within a week", async () => {
+    const a = await person();
+    const b = await person();
+    expect((await ask(a.cookie, b.username)).status).toBe(303);
+    const id = await idOf(b.cookie, a.username);
+    expect((await post(`/friends/${id}/decline`, {}, b.cookie)).status).toBe(303);
+
+    const aPage = await get("/friends", a.cookie);
+    expect(aPage).not.toContain(`@${b.username}`);
+    expect(aPage.toLowerCase()).not.toContain("declined");
+    expect((await ask(a.cookie, b.username)).status).toBe(429);
+  });
+
+  it("removes a friend from both lists, telling no one", async () => {
+    const a = await person();
+    const b = await person();
+    await befriend(a, b, a.username);
+    const id = await idOf(a.cookie, b.username);
+    expect((await post(`/friends/${id}/remove`, {}, a.cookie)).status).toBe(303);
+    expect(await get("/friends", a.cookie)).not.toContain(`@${b.username}`);
+    expect(await get("/friends", b.cookie)).not.toContain(`@${a.username}`);
+  });
+
+  it("never shows anyone else's friends", async () => {
+    const a = await person();
+    const b = await person();
+    const c = await person();
+    await befriend(a, b, a.username);
+    // c looks everywhere it can; a's friend b appears nowhere
+    for (const path of ["/", "/friends", "/circles", "/i/coffee", "/i/running", "/me"]) {
+      const html = await get(path, c.cookie);
+      expect(html).not.toContain(b.username);
+      expect(html).not.toContain(b.name);
+    }
+  });
+});

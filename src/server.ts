@@ -9,7 +9,7 @@ import * as db from "./db.ts";
 import * as events from "./events.ts";
 import * as auth from "./auth.ts";
 import { findInterest, INTERESTS } from "./interests.ts";
-import { page } from "./html.ts";
+import { page, type Who } from "./html.ts";
 import { parseSydney, toSydneyInput } from "./time.ts";
 import * as views from "./views.ts";
 
@@ -115,7 +115,7 @@ async function handle(
   const method = req.method ?? "GET";
   const now = Date.now();
   const me = db.personBySession(cookies(req)[COOKIE], now);
-  const who = me?.name ?? null;
+  const who = me ? { name: me.name, requests: db.incomingCount(me.id) } : null;
   let m: RegExpExecArray | null;
 
   // The live stream. Answers only in text/event-stream, including when it is
@@ -286,6 +286,55 @@ async function handle(
           body: views.message("This circle is full", `A circle holds at most ${db.CIRCLE_MAX} people, so everyone in it can know each other.`, "/circles") }));
       return redirect(res, `/c/${joined.id}`);
     }
+  }
+
+  // ---- Friends (decision 4, step 3) ----
+  if (path === "/friends" && method === "GET") {
+    const done = url.searchParams.get("done");
+    const notes: Record<string, string> = {
+      sent: "Request sent. They'll see it next time they look.",
+      friends: "You're friends now.",
+    };
+    return send(res, 200, page({ title: "Friends · Buddy Up", who,
+      body: views.friendsPage(db.friendsOf(me.id), db.incomingRequests(me.id), db.outgoingRequests(me.id),
+        { note: done ? notes[done] : undefined }) }));
+  }
+
+  if (path === "/friends" && method === "POST") {
+    const username = ((await form(req)).get("username") ?? "").trim().replace(/^@/, "").toLowerCase().slice(0, 40);
+    const asked = db.askFriend(me.id, username, now);
+    const show = (status: number, error: string) =>
+      send(res, status, page({ title: "Friends · Buddy Up", who,
+        body: views.friendsPage(db.friendsOf(me.id), db.incomingRequests(me.id), db.outgoingRequests(me.id),
+          { username, error }) }));
+    switch (asked.result) {
+      case "missing":
+        return show(404, `There's no one with the username "${username}". Check the spelling with them.`);
+      case "self":
+        return show(400, "That's you.");
+      case "already_friends":
+        return show(409, `You and ${asked.who.name} are already friends.`);
+      case "already_asked":
+        return show(409, `You've already asked ${asked.who.name}. It's up to them now.`);
+      case "too_soon": {
+        const days = Math.max(1, Math.ceil((asked.until - now) / 86400000));
+        return show(429, `You asked ${asked.who.name} recently. You can ask again in ${days} day${days === 1 ? "" : "s"}.`);
+      }
+      case "became_friends":
+        return redirect(res, "/friends?done=friends");
+      case "sent":
+        return redirect(res, "/friends?done=sent");
+    }
+  }
+
+  if ((m = /^\/friends\/(\d+)\/(accept|decline|cancel|remove)$/.exec(path)) && method === "POST") {
+    const other = Number(m[1]);
+    if (m[2] === "accept") {
+      if (db.acceptFriend(me.id, other, now)) return redirect(res, "/friends?done=friends");
+    } else if (m[2] === "decline") db.declineFriend(me.id, other);
+    else if (m[2] === "cancel") db.cancelFriendRequest(me.id, other);
+    else db.removeFriend(me.id, other);
+    return redirect(res, "/friends");
   }
 
   if (method === "GET" && path === "/me") {
@@ -585,7 +634,7 @@ async function handle(
   return notFound(res, who);
 }
 
-function notFound(res: ServerResponse, who: string | null): void {
+function notFound(res: ServerResponse, who: Who): void {
   send(
     res,
     404,
