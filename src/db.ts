@@ -414,3 +414,141 @@ export function editMeetup(
     return "saved";
   });
 }
+
+// ---- Circles (decision 4, step 2) ----
+// A small group joined by invite. Anyone in it can share the link; only the
+// owner can reset it. At most CIRCLE_MAX people, checked in the same
+// transaction as the insert, like a meetup's head count.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS circles (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT    NOT NULL,
+    owner_id    INTEGER NOT NULL REFERENCES people(id),
+    invite_code TEXT    NOT NULL UNIQUE,
+    created_at  INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS circle_members (
+    circle_id INTEGER NOT NULL REFERENCES circles(id),
+    person_id INTEGER NOT NULL REFERENCES people(id),
+    joined_at INTEGER NOT NULL,
+    PRIMARY KEY (circle_id, person_id)
+  );
+  CREATE INDEX IF NOT EXISTS circle_members_by_person ON circle_members (person_id);
+`);
+
+export const CIRCLE_MAX = 25;
+
+export interface Circle {
+  id: number;
+  name: string;
+  owner_id: number;
+  invite_code: string;
+  members: number;
+}
+
+const circleCols = `c.id, c.name, c.owner_id, c.invite_code,
+  (SELECT COUNT(*) FROM circle_members cm WHERE cm.circle_id = c.id) AS members`;
+
+const cq = {
+  insert: db.prepare(
+    "INSERT INTO circles (name, owner_id, invite_code, created_at) VALUES (?, ?, ?, ?) RETURNING id",
+  ),
+  addMember: db.prepare(
+    "INSERT INTO circle_members (circle_id, person_id, joined_at) VALUES (?, ?, ?)",
+  ),
+  mine: db.prepare(
+    `SELECT ${circleCols} FROM circles c JOIN circle_members me ON me.circle_id = c.id AND me.person_id = ?
+     ORDER BY c.name COLLATE NOCASE`,
+  ),
+  asMember: db.prepare(
+    `SELECT ${circleCols} FROM circles c JOIN circle_members me ON me.circle_id = c.id AND me.person_id = ?
+     WHERE c.id = ?`,
+  ),
+  byCode: db.prepare(`SELECT ${circleCols} FROM circles c WHERE c.invite_code = ?`),
+  byId: db.prepare(`SELECT ${circleCols} FROM circles c WHERE c.id = ?`),
+  isMember: db.prepare("SELECT 1 FROM circle_members WHERE circle_id = ? AND person_id = ?"),
+  members: db.prepare(
+    `SELECT p.id, p.name FROM circle_members cm JOIN people p ON p.id = cm.person_id
+     WHERE cm.circle_id = ? ORDER BY cm.joined_at, cm.rowid`,
+  ),
+  removeMember: db.prepare("DELETE FROM circle_members WHERE circle_id = ? AND person_id = ?"),
+  setOwner: db.prepare("UPDATE circles SET owner_id = ? WHERE id = ?"),
+  remove: db.prepare("DELETE FROM circles WHERE id = ?"),
+  setCode: db.prepare("UPDATE circles SET invite_code = ? WHERE id = ?"),
+};
+
+// 12 characters from 9 random bytes: not guessable, short enough to read off
+// a screen
+function inviteCode(): string {
+  return randomBytes(9).toString("base64url");
+}
+
+export function createCircle(name: string, ownerId: number): number {
+  return tx(() => {
+    const now = Date.now();
+    const { id } = cq.insert.get(name, ownerId, inviteCode(), now) as { id: number };
+    cq.addMember.run(id, ownerId, now);
+    return id;
+  });
+}
+
+export function myCircles(personId: number): Circle[] {
+  return cq.mine.all(personId) as unknown as Circle[];
+}
+
+// null unless the person is in it: to anyone else, the circle doesn't exist
+export function circleForMember(circleId: number, personId: number): Circle | null {
+  return (cq.asMember.get(personId, circleId) as Circle | undefined) ?? null;
+}
+
+export function circleByCode(code: string): Circle | null {
+  return (cq.byCode.get(code) as Circle | undefined) ?? null;
+}
+
+export function isCircleMember(circleId: number, personId: number): boolean {
+  return cq.isMember.get(circleId, personId) !== undefined;
+}
+
+export function circleMembers(circleId: number): { id: number; name: string }[] {
+  return cq.members.all(circleId) as { id: number; name: string }[];
+}
+
+export type CircleJoin =
+  | { result: "joined"; id: number }
+  | { result: "already"; id: number }
+  | { result: "full" }
+  | { result: "missing" };
+
+export function joinCircle(code: string, personId: number): CircleJoin {
+  return tx(() => {
+    const c = circleByCode(code);
+    if (!c) return { result: "missing" };
+    if (isCircleMember(c.id, personId)) return { result: "already", id: c.id };
+    if (c.members >= CIRCLE_MAX) return { result: "full" };
+    cq.addMember.run(c.id, personId, Date.now());
+    return { result: "joined", id: c.id };
+  });
+}
+
+// The owner leaving hands the circle to whoever joined earliest; the last
+// person leaving ends it.
+export function leaveCircle(circleId: number, personId: number): void {
+  tx(() => {
+    const c = cq.byId.get(circleId) as Circle | undefined;
+    if (!c || !isCircleMember(circleId, personId)) return;
+    cq.removeMember.run(circleId, personId);
+    const rest = circleMembers(circleId);
+    if (rest.length === 0) cq.remove.run(circleId);
+    else if (c.owner_id === personId) cq.setOwner.run(rest[0].id, circleId);
+  });
+}
+
+// Only the owner; the old link stops working at once.
+export function resetInvite(circleId: number, personId: number): boolean {
+  return tx(() => {
+    const c = cq.byId.get(circleId) as Circle | undefined;
+    if (!c || c.owner_id !== personId) return false;
+    cq.setCode.run(inviteCode(), circleId);
+    return true;
+  });
+}

@@ -231,6 +231,63 @@ async function handle(
     return redirect(res, "/login");
   }
 
+  // ---- Circles (decision 4, step 2) ----
+  if (path === "/circles" && method === "GET") {
+    return send(res, 200, page({ title: "Circles · Buddy Up", who, body: views.circlesPage(db.myCircles(me.id)) }));
+  }
+
+  if (path === "/circles" && method === "POST") {
+    const name = clean((await form(req)).get("name"), 40);
+    if (!name)
+      return send(res, 400, page({ title: "Circles · Buddy Up", who,
+        body: views.circlesPage(db.myCircles(me.id), "", "Give the circle a name people will recognise.") }));
+    return redirect(res, `/c/${db.createCircle(name, me.id)}`);
+  }
+
+  if ((m = /^\/c\/(\d+)$/.exec(path)) && method === "GET") {
+    // to anyone outside it, a circle doesn't exist
+    const circle = db.circleForMember(Number(m[1]), me.id);
+    if (!circle) return notFound(res, who);
+    const proto = req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+    const link = `${proto}://${req.headers.host ?? "localhost"}/join/${circle.invite_code}`;
+    return send(res, 200, page({ title: `${circle.name} · Buddy Up`, who,
+      body: views.circlePage(circle, db.circleMembers(circle.id), me, link) }));
+  }
+
+  if ((m = /^\/c\/(\d+)\/(leave|reset)$/.exec(path)) && method === "POST") {
+    const id = Number(m[1]);
+    if (!db.circleForMember(id, me.id)) return notFound(res, who);
+    if (m[2] === "leave") {
+      db.leaveCircle(id, me.id);
+      return redirect(res, "/circles");
+    }
+    if (!db.resetInvite(id, me.id))
+      return send(res, 403, page({ title: "Not yours", who,
+        body: views.message("Only the person who started it", "Only the circle's owner can reset its link.", `/c/${id}`) }));
+    return redirect(res, `/c/${id}`);
+  }
+
+  if ((m = /^\/join\/([A-Za-z0-9_-]{6,40})$/.exec(path))) {
+    const code = m[1];
+    const gone = () =>
+      send(res, 404, page({ title: "Link expired", who,
+        body: views.message("This invite link doesn't work", "It may have been reset. Ask someone in the circle for a fresh one.", "/circles") }));
+    if (method === "GET") {
+      const circle = db.circleByCode(code);
+      if (!circle) return gone();
+      if (db.isCircleMember(circle.id, me.id)) return redirect(res, `/c/${circle.id}`);
+      return send(res, 200, page({ title: `Join ${circle.name}`, who, body: views.joinPage(circle, code) }));
+    }
+    if (method === "POST") {
+      const joined = db.joinCircle(code, me.id);
+      if (joined.result === "missing") return gone();
+      if (joined.result === "full")
+        return send(res, 409, page({ title: "Full", who,
+          body: views.message("This circle is full", `A circle holds at most ${db.CIRCLE_MAX} people, so everyone in it can know each other.`, "/circles") }));
+      return redirect(res, `/c/${joined.id}`);
+    }
+  }
+
   if (method === "GET" && path === "/me") {
     return send(res, 200, page({ title: "Display name", who, body: views.nameForm(me.name) }));
   }

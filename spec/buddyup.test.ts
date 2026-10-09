@@ -635,3 +635,97 @@ describe("accounts: only people who signed in, as themselves", () => {
     expect(right.headers.get("set-cookie")).toBe(null);
   });
 });
+
+// ---- Circles (decision 4, step 2) ----
+
+async function circle(cookie: string, name = `Circle ${tag()}`): Promise<number> {
+  const res = await post("/circles", { name }, cookie);
+  expect(res.status).toBe(303);
+  const id = Number(/^\/c\/(\d+)$/.exec(res.headers.get("location") ?? "")?.[1]);
+  expect(id).toBeGreaterThan(0);
+  return id;
+}
+
+// any member can read the invite link off the circle page
+async function inviteCode(cookie: string, circleId: number): Promise<string> {
+  const html = await get(`/c/${circleId}`, cookie);
+  const code = /\/join\/([A-Za-z0-9_-]+)"/.exec(html)?.[1];
+  expect(code).toBeTruthy();
+  return code!;
+}
+
+async function joinCircle(cookie: string, code: string): Promise<Response> {
+  return post(`/join/${code}`, {}, cookie);
+}
+
+describe("circles: a group joined by invite, at most 25", () => {
+  it("lets someone in by invite, and shows them in the member list", async () => {
+    const owner = await person();
+    const friend = await person();
+    const id = await circle(owner.cookie);
+    const code = await inviteCode(owner.cookie, id);
+
+    // opening the link only asks; it doesn't join
+    expect(await get(`/join/${code}`, friend.cookie)).toContain(`action="/join/${code}"`);
+    expect(await get(`/c/${id}`, owner.cookie)).not.toContain(friend.name);
+
+    expect((await joinCircle(friend.cookie, code)).status).toBe(303);
+    const page = await get(`/c/${id}`, friend.cookie);
+    expect(page).toContain(friend.name);
+    expect(page).toContain(owner.name);
+    // any member can share the link, not just the owner
+    expect(page).toContain(`/join/${code}`);
+  });
+
+  it("doesn't exist to someone outside it", async () => {
+    const owner = await person();
+    const outsider = await person();
+    const id = await circle(owner.cookie, `Private ${tag()}`);
+    const res = await fetch(new URL(`/c/${id}`, baseUrl), { headers: { cookie: outsider.cookie } });
+    expect(res.status).toBe(404);
+    expect(await res.text()).not.toContain("Private");
+  });
+
+  it("refuses a 26th member, even when several arrive at once", async () => {
+    const owner = await person();
+    const id = await circle(owner.cookie);
+    const code = await inviteCode(owner.cookie, id);
+    const first = await Promise.all(Array.from({ length: 23 }, () => person()));
+    for (const p of first) expect((await joinCircle(p.cookie, code)).status).toBe(303);
+    // 24 in; five people race for the 25th place
+    const racers = await Promise.all(Array.from({ length: 5 }, () => person()));
+    const statuses = (await Promise.all(racers.map((p) => joinCircle(p.cookie, code)))).map((r) => r.status).sort();
+    expect(statuses).toEqual([303, 409, 409, 409, 409]);
+    expect(await get(`/c/${id}`, owner.cookie)).toContain("25 of 25 people");
+  });
+
+  it("kills the old link when the owner resets it, and only the owner can", async () => {
+    const owner = await person();
+    const member = await person();
+    const late = await person();
+    const id = await circle(owner.cookie);
+    const oldCode = await inviteCode(owner.cookie, id);
+    expect((await joinCircle(member.cookie, oldCode)).status).toBe(303);
+
+    expect((await post(`/c/${id}/reset`, {}, member.cookie)).status).toBe(403);
+    expect((await post(`/c/${id}/reset`, {}, owner.cookie)).status).toBe(303);
+
+    expect((await joinCircle(late.cookie, oldCode)).status).toBe(404);
+    const newCode = await inviteCode(owner.cookie, id);
+    expect(newCode).not.toBe(oldCode);
+    expect((await joinCircle(late.cookie, newCode)).status).toBe(303);
+  });
+
+  it("hands the circle on when its owner leaves, and shuts you out once you've left", async () => {
+    const owner = await person();
+    const second = await person();
+    const id = await circle(owner.cookie);
+    expect((await joinCircle(second.cookie, await inviteCode(owner.cookie, id))).status).toBe(303);
+
+    expect((await post(`/c/${id}/leave`, {}, owner.cookie)).status).toBe(303);
+    const gone = await fetch(new URL(`/c/${id}`, baseUrl), { headers: { cookie: owner.cookie } });
+    expect(gone.status).toBe(404);
+    // the earliest remaining member now owns it, so can reset it
+    expect((await post(`/c/${id}/reset`, {}, second.cookie)).status).toBe(303);
+  });
+});

@@ -1,4 +1,5 @@
-import type { Meetup, MyMeetup, Person } from "./db.ts";
+import type { Circle, Meetup, MyMeetup, Person } from "./db.ts";
+import { CIRCLE_MAX } from "./db.ts";
 import { INTERESTS, findInterest, type Interest } from "./interests.ts";
 import { esc } from "./html.ts";
 import {
@@ -394,4 +395,72 @@ export function editPage(interest: Interest, form: string): string {
   return `<p><a href="/i/${interest.slug}">← ${esc(interest.name)}</a></p>
 <p class="lede">Everyone going will see what changed on the meetup.</p>
 ${form}`;
+}
+
+// ---- Circles (decision 4, step 2) ----
+
+export function circlesPage(circles: Circle[], name = "", error = ""): string {
+  const list = circles.length
+    ? `<ul class="later-list circles">${circles
+        .map(
+          (c) =>
+            `<li class="later"><a href="/c/${c.id}"><b>${esc(c.name)}</b></a><span class="hint">${c.members}/${CIRCLE_MAX}</span></li>`,
+        )
+        .join("")}</ul>`
+    : `<p class="empty">You're not in any circle yet. Start one, or open an invite link someone sent you.</p>`;
+  return `
+<h1>Your circles</h1>
+<p class="lede">A circle is a group who already know each other: a class, a hall floor, a club. At most ${CIRCLE_MAX} people.</p>
+${list}
+<form method="post" action="/circles" class="inline-gap" id="new-circle">
+  <fieldset>
+    <legend>Start a circle</legend>
+    ${error ? `<p class="error" role="alert">${esc(error)}</p>` : ""}
+    <label for="circle-name">Name</label>
+    <input id="circle-name" name="name" maxlength="40" required value="${esc(name)}" placeholder="e.g. COMP4020, Bruce Hall 3F">
+    <button type="submit">Start it</button>
+  </fieldset>
+</form>`;
+}
+
+export function circlePage(
+  c: Circle,
+  members: { id: number; name: string }[],
+  me: Person,
+  link: string,
+): string {
+  const owner = c.owner_id === me.id;
+  return `
+<p><a href="/circles">← Your circles</a></p>
+<h1>${esc(c.name)}</h1>
+<p class="lede">${c.members} of ${CIRCLE_MAX} people${owner ? " · you started this one" : ""}</p>
+<h2>Invite someone you know</h2>
+<p class="hint">Anyone with this link can join while there's room. Only send it to people you'd be glad to meet.</p>
+<label for="invite" class="sr-only">Invite link</label>
+<input id="invite" class="invite" readonly value="${esc(link)}">
+${
+  owner
+    ? `<form method="post" action="/c/${c.id}/reset" class="inline-gap"><button class="quiet">Reset the link</button> <span class="hint">The old link stops working.</span></form>`
+    : ""
+}
+<h2>Who's in it</h2>
+<ul class="people">${members
+    .map((m) => `<li>${esc(m.name)}${m.id === c.owner_id ? " (started it)" : ""}</li>`)
+    .join("")}</ul>
+<form method="post" action="/c/${c.id}/leave" class="inline-gap"><button class="quiet">Leave this circle</button></form>`;
+}
+
+// Opening an invite link only asks; joining is a button, so a chat app's link
+// preview can't sign anyone up.
+export function joinPage(c: Circle, code: string): string {
+  const full = c.members >= CIRCLE_MAX;
+  return `
+<h1>Join ${esc(c.name)}?</h1>
+<p class="lede">${c.members} of ${CIRCLE_MAX} people. You'll see meetups shared with this circle, and they'll see yours.</p>
+${
+  full
+    ? `<p class="error">This circle is full.</p>`
+    : `<form method="post" action="/join/${esc(code)}"><button>Join ${esc(c.name)}</button></form>`
+}
+<p><a href="/circles">Not now</a></p>`;
 }

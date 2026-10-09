@@ -50,6 +50,8 @@ p.lede{color:var(--muted);margin:0 0 8px}
 form.inline{display:inline;margin:0}
 button.link{all:unset;color:var(--link);text-decoration:underline;cursor:pointer;font-size:inherit}
 button.link:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+.invite{font-family:ui-monospace,Menlo,monospace;font-size:14px;background:var(--soft)}
+.inline-gap{margin:12px 0}
 .auth-actions{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}
 button,.button{font:inherit;font-weight:700;border:0;border-radius:999px;min-height:44px;padding:0 20px;background:var(--c,var(--accent));color:#FFFFFF;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
 button.quiet,a.button.quiet{background:transparent;color:var(--muted);border:1px solid #D8CDBE;font-weight:500;padding:0 16px}
@@ -290,7 +292,7 @@ export function page(opts: {
 <style>${CSS}</style>
 </head>
 <body${style}${live}>
-<header class="site"><div class="bar"><a class="brand" href="/">Buddy Up</a><nav class="nav" aria-label="Interests">${INTERESTS.map((i) => `<a href="/i/${i.slug}">${esc(i.name)}</a>`).join("")}<a href="/readme/">About</a></nav>${who}</div></header>
+<header class="site"><div class="bar"><a class="brand" href="/">Buddy Up</a><nav class="nav" aria-label="Interests">${INTERESTS.map((i) => `<a href="/i/${i.slug}">${esc(i.name)}</a>`).join("")}<a href="/circles">Circles</a><a href="/readme/">About</a></nav>${who}</div></header>
 <main class="wrap">
 ${opts.body}
 </main>
