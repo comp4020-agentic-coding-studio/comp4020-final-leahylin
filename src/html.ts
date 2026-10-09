@@ -84,6 +84,15 @@ details.reply .note-form{margin-top:10px}
 .quick-notes button.quiet{font-size:15px;padding:0 14px}
 .brand{white-space:nowrap}
 .who{flex-wrap:wrap;justify-content:flex-end;text-align:right}
+.hero{display:grid;gap:32px;padding:8px 0 24px}
+.hero h1{margin-bottom:12px}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.step{display:grid;grid-template-columns:auto auto 1fr;gap:12px;align-items:start;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px 18px}
+.step-n{font-family:var(--display);font-weight:800;font-size:22px;line-height:1;color:var(--accent);min-width:16px}
+.step-icon{width:24px;height:24px;color:var(--accent)}
+.step b{display:block;font-size:17px}
+.step p{margin:2px 0 0;color:var(--muted);font-size:15px}
+.bar.out .nav{display:flex;margin-left:auto}
 .auth-actions{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}
 button,.button{font:inherit;font-weight:700;border:0;border-radius:999px;min-height:44px;padding:0 20px;background:var(--c,var(--accent));color:#FFFFFF;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
 button.quiet,a.button.quiet{background:transparent;color:var(--muted);border:1px solid #D8CDBE;font-weight:500;padding:0 16px}
@@ -138,7 +147,7 @@ footer{max-width:40rem;margin:0 auto;padding:16px;color:var(--muted);font-size:1
 }
 @media (min-width:1000px){
 header.site .bar,.wrap,footer{max-width:1440px;padding-left:clamp(24px,4vw,64px);padding-right:clamp(24px,4vw,64px)}
-main.wrap:not(:has(.cols,.interests)){max-width:calc(44rem + 2 * clamp(24px,4vw,64px))}
+main.wrap:not(:has(.cols,.interests,.hero)){max-width:calc(44rem + 2 * clamp(24px,4vw,64px))}
 .nav{display:flex}
 h1{font-size:clamp(36px,3.2vw,52px)}
 main.wrap{padding-top:36px;padding-bottom:48px}
@@ -150,6 +159,7 @@ main.wrap{padding-top:36px;padding-bottom:48px}
 .next .big-when{font-size:56px}
 .fab,.mobile-only{display:none}
 .web-only{display:block}
+.hero{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:clamp(40px,5vw,96px);align-items:center;padding:32px 0 48px}
 }
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 @keyframes just-changed{from{box-shadow:0 0 0 4px #f0d58a}to{box-shadow:0 0 0 4px rgba(240,213,138,0)}}
@@ -333,7 +343,7 @@ export function page(opts: {
 <style>${CSS}</style>
 </head>
 <body${style}${live}>
-<header class="site"><div class="bar"><a class="brand" href="/">Buddy Up</a><nav class="nav" aria-label="Main">${nav}<a href="/readme/">About</a></nav>${who}</div></header>
+<header class="site"><div class="bar${opts.who ? "" : " out"}"><a class="brand" href="/">Buddy Up</a><nav class="nav" aria-label="Main">${nav}<a href="/readme/">About</a></nav>${who}</div></header>
 <main class="wrap">
 ${opts.body}
 </main>

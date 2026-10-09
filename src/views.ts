@@ -86,11 +86,22 @@ export function signupForm(next: string, values: AuthValues = {}, error = ""): s
 
 // Signed out, there is nothing to see but what this is and the way in.
 export function welcome(): string {
+  const step = (n: number, icon: string, title: string, text: string) =>
+    `<li class="step"><span class="step-n">${n}</span>${icon}<div><b>${title}</b><p>${text}</p></div></li>`;
   return `
+<div class="hero">
+<div class="hero-text">
 <h1>What do you want company for?</h1>
 <p class="lede">Running, badminton or coffee, with people you already know: your circle or your friends.</p>
 <p class="auth-actions"><a class="button" href="/signup">Make an account</a> <a class="button quiet" href="/login">Log in</a></p>
-<p class="hint">Nothing here is public. You only see meetups from people you know. <a href="/readme/">What this is, and why</a></p>`;
+<p class="hint">Nothing here is public. You only see meetups from people you know.</p>
+</div>
+<ol class="steps" aria-label="How it works">
+${step(1, `<svg class="step-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c3 .4 5.5 2.8 5.5 5.8"/></svg>`, "Start or join a circle", "Your class, your hall floor, your club. Up to 25 people, by invite.")}
+${step(2, `<svg class="step-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18"/><path d="M8 2v4"/><path d="M16 2v4"/><path d="M12 12v6"/><path d="M9 15h6"/></svg>`, "Post a run, a game or a coffee", "Say when and where, and who it's for: one circle, or your friends.")}
+${step(3, `<svg class="step-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.1-7-11.5A7 7 0 0 1 19 9.5C19 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>`, "Meet people you already know", "Notes for the group on the way, then check in when you're there.")}
+</ol>
+</div>`;
 }
 
 function spots(m: Meetup): string {
