@@ -6,7 +6,8 @@ import {
 import { readFileSync } from "node:fs";
 import { marked } from "marked";
 import * as db from "./db.ts";
-import { findInterest } from "./interests.ts";
+import * as events from "./events.ts";
+import { findInterest, INTERESTS } from "./interests.ts";
 import { page } from "./html.ts";
 import { parseSydney, toSydneyInput } from "./time.ts";
 import * as views from "./views.ts";
@@ -87,6 +88,12 @@ function readMeetupForm(f: URLSearchParams, now: number) {
   return { values, startsAt: startsAt ?? 0, capacity, error };
 }
 
+// A meetup changing touches two places people may be looking at: the meetup
+// itself, and the list it sits in.
+function touched(m: { id: number; interest: string }): string[] {
+  return [`m:${m.id}`, `i:${m.interest}`];
+}
+
 function readmeHtml(): string {
   const md = readFileSync(new URL("../README.md", import.meta.url), "utf8");
   return `<article class="readme">${marked.parse(md, { async: false })}</article>`;
@@ -104,6 +111,19 @@ async function handle(
   const who = me?.name ?? null;
   let m: RegExpExecArray | null;
 
+  // The live stream. Answers only in text/event-stream, including when it is
+  // turning someone away — see events.decline for why a 503 would be worse
+  // than useless here.
+  if (method === "GET" && path === "/events") {
+    const topics = events.parseTopics(url.searchParams.get("topics"));
+    if (
+      topics.size === 0 ||
+      !events.subscribe(req, res, topics, me?.id ?? null)
+    )
+      events.decline(res);
+    return;
+  }
+
   if (method === "GET" && path === "/") {
     const mine = me ? db.myMeetups(me.id, now) : [];
     return send(
@@ -112,6 +132,11 @@ async function handle(
       page({
         title: "Buddy Up",
         who,
+        // the counts for every interest, plus whatever you're going to
+        topics: [
+          ...INTERESTS.map((i) => `i:${i.slug}`),
+          ...mine.map((m) => `m:${m.id}`),
+        ],
         body: views.home(me, db.upcomingCounts(now), mine, db.attendees, now),
       }),
     );
@@ -192,6 +217,7 @@ async function handle(
         title: `${interest.name} · Buddy Up`,
         who,
         colour: interest.colour,
+        topics: [`i:${interest.slug}`],
         body,
       }),
     );
@@ -239,6 +265,8 @@ async function handle(
       capacity,
       note: values.note,
     });
+    // nobody is watching m:<id> yet — it didn't exist a moment ago
+    events.publish([`i:${interest.slug}`]);
     return redirect(res, `/i/${interest.slug}#m${id}`);
   }
 
@@ -261,6 +289,7 @@ async function handle(
         title: `${interest.name} · Buddy Up`,
         who,
         colour: interest.colour,
+        topics: [`m:${meetup.id}`],
         body,
       }),
     );
@@ -356,6 +385,7 @@ async function handle(
         `${going} people are already going, so the head count can't go below ${going}.`,
       );
     }
+    if (result === "saved") events.publish(touched(meetup));
     return redirect(res, back);
   }
 
@@ -401,6 +431,8 @@ async function handle(
           }),
         );
       }
+      // "already" means they were going before they asked; nothing moved
+      if (result === "joined") events.publish(touched(meetup));
       return redirect(res, back);
     }
 
@@ -420,7 +452,8 @@ async function handle(
       );
     }
     if (action === "leave") {
-      if (meetup.starts_at > now) db.leave(meetup.id, me.id);
+      if (meetup.starts_at > now && db.leave(meetup.id, me.id))
+        events.publish(touched(meetup));
       return redirect(res, back);
     }
     if (meetup.host_id !== me.id) {
@@ -438,7 +471,7 @@ async function handle(
         }),
       );
     }
-    db.cancel(meetup.id, now);
+    if (db.cancel(meetup.id, now)) events.publish(touched(meetup));
     return redirect(res, back);
   }
 
@@ -462,7 +495,7 @@ function notFound(res: ServerResponse, who: string | null): void {
 }
 
 const port = Number(process.env.PORT ?? 8080);
-createServer((req, res) => {
+const server = createServer((req, res) => {
   handle(req, res).catch((err) => {
     console.error(err);
     if (!res.headersSent)
@@ -476,4 +509,20 @@ createServer((req, res) => {
       );
     else res.end();
   });
-}).listen(port, "0.0.0.0", () => console.log(`buddy up listening on :${port}`));
+});
+server.listen(port, "0.0.0.0", () =>
+  console.log(`buddy up listening on :${port}`),
+);
+
+// Fly stops the machine when nobody is using it. Killed outright, every open
+// stream is a severed socket, every client reconnects within seconds, and
+// auto_start_machines boots the machine straight back up. Ending them properly
+// first, with a retry delay, lets the stop actually stick.
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.on(signal, () => {
+    events.closeAll();
+    server.close(() => process.exit(0));
+    // don't wait on a keep-alive socket that never sends another request
+    setTimeout(() => process.exit(0), 2000).unref();
+  });
+}

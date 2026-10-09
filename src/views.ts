@@ -169,19 +169,29 @@ export function home(
   const interests = `<h2>Interests</h2>\n<div class="interests">${cards}</div>`;
   const intro = `<h1>What do you want company for?</h1>
 <p class="lede">Pick a thing. Join someone who's going, or say when and where you are.</p>`;
-  if (!me) return `${intro}\n${nicknameForm("/")}\n${interests}`;
+  // Signed out, the live part is just the counts: the form must not be swapped
+  // out from under someone typing their name into it.
+  if (!me)
+    return `${intro}\n${nicknameForm("/")}\n<h2>Interests</h2>\n<div class="interests" data-live="counts">${cards}</div>`;
 
   // With plans, they come first: opening the app should tell you where to be.
   const next = mine.find((m) => m.cancelled_at === null);
-  if (mine.length === 0) {
-    return `${intro}\n${interests}\n<h2>You're going to</h2>\n<p class="empty">Nothing yet. Pick something above.</p>`;
-  }
   const rest = mine.filter((m) => m !== next);
-  return `<h1>You're going to</h1>
+  const later = rest.length
+    ? `<h2>${next ? "After that" : "Your plans"}</h2><ul class="later-list">${rest.map((m) => laterRow(m, me, now)).join("")}</ul>`
+    : "";
+  // Signed in there is no form on this page, and joining your first meetup
+  // reorders the whole thing — plans move above the interests. Swapping a
+  // region can't reorder its neighbours, so the whole body is one live region.
+  const body =
+    mine.length === 0
+      ? `${intro}\n${interests}\n<h2>You're going to</h2>\n<p class="empty">Nothing yet. Pick something above.</p>`
+      : `<h1>You're going to</h1>
 ${next ? nextUp(next, me, peopleFor(next.id), now) : ""}
-${rest.length ? `<h2>${next ? "After that" : "Your plans"}</h2><ul class="later-list">${rest.map((m) => laterRow(m, me, now)).join("")}</ul>` : ""}
+${later}
 <h2>Find something else</h2>
 <div class="interests">${cards}</div>`;
+  return `<div data-live="home">${body}</div>`;
 }
 
 export interface HostFormValues {
@@ -261,7 +271,7 @@ export function interestPage(
 <h1 style="color:${interest.colour}">${esc(interest.name)}</h1>
 <p class="lede">${esc(interest.blurb)}</p>
 <h2>Coming up</h2>
-${items}
+<div data-live="coming">${items}</div>
 <h2>Or start one</h2>
 ${me ? form : nicknameForm(`/i/${interest.slug}#host`)}
 ${log}`;
@@ -277,9 +287,11 @@ export function meetupPage(
   const interest = findInterest(m.interest)!;
   return `
 <p><a href="/i/${interest.slug}">← ${esc(interest.name)}</a></p>
+<div data-live="meetup">
 <ul class="meetups">${meetupCard(m, me, going, now)}</ul>
 <h2>Who's going</h2>
 <ul class="people">${people.map((p) => `<li>${esc(p.name)}</li>`).join("")}</ul>
+</div>
 ${me ? "" : nicknameForm(`/m/${m.id}`)}`;
 }
 

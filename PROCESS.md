@@ -59,3 +59,10 @@ Crit 9 will add real-time updates, meeting-point details, an in-meetup notice
 board, and check-in. Each of those was broad enough to sprawl, so before any
 crit 9 code I narrowed each one to a concrete shape and a boundary — recorded
 in [docs/decisions/0002-crit9-scope.md](docs/decisions/0002-crit9-scope.md).
+
+Two are done: the meeting point, and live updates. Building the live layer
+turned up a cost the scope note had missed — an open stream keeps the Fly
+machine awake, so the scale-to-zero saving in
+[0001](docs/decisions/0001-stack.md) only holds while nobody is looking. That,
+and why the stream broadcasts a bare signal rather than content, are in
+[docs/decisions/0003-live-updates.md](docs/decisions/0003-live-updates.md).

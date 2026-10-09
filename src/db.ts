@@ -270,12 +270,15 @@ export function join(
   });
 }
 
-export function leave(meetupId: number, personId: number): void {
-  q.deleteJoin.run(meetupId, personId);
+// Both report whether a row actually moved, so the caller only announces a
+// change that happened: leaving something you weren't going to, or calling off
+// an already-cancelled meetup (a double tap on a slow phone), changes nothing.
+export function leave(meetupId: number, personId: number): boolean {
+  return Number(q.deleteJoin.run(meetupId, personId).changes) > 0;
 }
 
-export function cancel(meetupId: number, now: number): void {
-  q.cancel.run(now, meetupId);
+export function cancel(meetupId: number, now: number): boolean {
+  return Number(q.cancel.run(now, meetupId).changes) > 0;
 }
 
 export interface MeetupEdit {
