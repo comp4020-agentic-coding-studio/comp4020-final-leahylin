@@ -1,8 +1,26 @@
 import type { Meetup, MyMeetup, Person } from "./db.ts";
 import { INTERESTS, findInterest, type Interest } from "./interests.ts";
 import { esc } from "./html.ts";
-import { formatDay, formatWhen, relative, toSydneyInput } from "./time.ts";
+import {
+  formatDate,
+  formatDay,
+  formatTime,
+  formatWhen,
+  relative,
+  toSydneyInput,
+} from "./time.ts";
 import { MAX_AHEAD_MS } from "./db.ts";
+
+// Inline stroke icons instead of emoji: they take the interest's colour and
+// read the same on every phone.
+const PIN = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.1-7-11.5A7 7 0 0 1 19 9.5C19 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>`;
+const FLAG = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/></svg>`;
+
+function where(place: string, meetingPoint: string, cls = "place"): string {
+  return `<p class="${cls}">${PIN}<span>${esc(place)}</span></p>${
+    meetingPoint ? `<p class="place note">${FLAG}<span>${esc(meetingPoint)}</span></p>` : ""
+  }`;
+}
 
 export function nicknameForm(next: string, current = "", error = ""): string {
   return `
@@ -81,8 +99,7 @@ export function meetupCard(
 <li class="meetup"${colour} id="m${m.id}">
   <a class="title" href="/m/${m.id}">${label}<span class="when">${esc(formatWhen(m.starts_at))}</span><span class="rel">${esc(relative(m.starts_at, now))}</span></a>
   ${changes(m)}
-  <p class="place">📍 ${esc(m.place)}</p>
-  ${m.meeting_point ? `<p class="note">🧭 ${esc(m.meeting_point)}</p>` : ""}
+  ${where(m.place, m.meeting_point)}
   ${m.note ? `<p class="note">${esc(m.note)}</p>` : ""}
   <p class="hint">hosted by ${esc(m.host_name)}</p>
   <div class="row">${spots(m)}<span>${actions(m, me, going, now)}</span></div>
@@ -124,16 +141,21 @@ function nextUp(
   const interest = findInterest(m.interest);
   return `
 <section class="next" style="--c:${interest?.colour ?? "var(--accent)"}" id="m${m.id}">
-  <p class="label">Next up · ${esc(interest?.name ?? m.interest)}${m.host_id === me.id ? " · you're hosting" : ""}</p>
-  ${changeBanner(m)}
-  <p class="big-when"><a href="/m/${m.id}">${esc(formatWhen(m.starts_at))}</a></p>
-  <p class="countdown">${esc(relative(m.starts_at, now))}</p>
-  <p class="big-place">📍 ${esc(m.place)}</p>
-  ${m.meeting_point ? `<p class="note">🧭 ${esc(m.meeting_point)}</p>` : ""}
-  ${m.note ? `<p class="note">${esc(m.note)}</p>` : ""}
-  <p class="hint">Who's coming</p>
-  <ul class="people">${people.map((p) => `<li>${esc(p.name)}</li>`).join("")}</ul>
-  <div class="row">${spots(m)}<span>${actions(m, me, true, now)}</span></div>
+ <div class="inner">
+  <div>
+   <p class="label">Next up · ${esc(interest?.name ?? m.interest)}${m.host_id === me.id ? " · you're hosting" : ""}</p>
+   ${changeBanner(m)}
+   <p class="big-when"><a href="/m/${m.id}">${esc(formatTime(m.starts_at))}</a></p>
+   <p class="countdown"><span class="date">${esc(formatDate(m.starts_at))}</span> · ${esc(relative(m.starts_at, now))}</p>
+  </div>
+  <div>
+   ${where(m.place, m.meeting_point, "place big-place")}
+   ${m.note ? `<p class="note">${esc(m.note)}</p>` : ""}
+   <p class="hint people-label">Who's coming</p>
+   <ul class="people">${people.map((p) => `<li>${esc(p.name)}</li>`).join("")}</ul>
+   <div class="row">${spots(m)}<span>${actions(m, me, true, now)}</span></div>
+  </div>
+ </div>
 </section>`;
 }
 
@@ -166,13 +188,13 @@ export function home(
       <div class="meta">${n === 0 ? "nothing on yet — start one" : `${n} coming up`}</div>
     </a>`;
   }).join("");
-  const interests = `<h2>Interests</h2>\n<div class="interests">${cards}</div>`;
+  const interests = `<h2>Interests</h2>\n<div class="interests row3">${cards}</div>`;
   const intro = `<h1>What do you want company for?</h1>
 <p class="lede">Pick a thing. Join someone who's going, or say when and where you are.</p>`;
   // Signed out, the live part is just the counts: the form must not be swapped
   // out from under someone typing their name into it.
   if (!me)
-    return `${intro}\n${nicknameForm("/")}\n<h2>Interests</h2>\n<div class="interests" data-live="counts">${cards}</div>`;
+    return `${intro}\n${nicknameForm("/")}\n<h2>Interests</h2>\n<div class="interests row3" data-live="counts">${cards}</div>`;
 
   // With plans, they come first: opening the app should tell you where to be.
   const next = mine.find((m) => m.cancelled_at === null);
@@ -186,11 +208,17 @@ export function home(
   const body =
     mine.length === 0
       ? `${intro}\n${interests}\n<h2>You're going to</h2>\n<p class="empty">Nothing yet. Pick something above.</p>`
-      : `<h1>You're going to</h1>
+      : `<div class="cols">
+<div>
+<h1>You're going to</h1>
 ${next ? nextUp(next, me, peopleFor(next.id), now) : ""}
 ${later}
+</div>
+<aside class="side">
 <h2>Find something else</h2>
-<div class="interests">${cards}</div>`;
+<div class="interests">${cards}</div>
+</aside>
+</div>`;
   return `<div data-live="home">${body}</div>`;
 }
 
@@ -257,24 +285,37 @@ export function interestPage(
   form: string,
 ): string {
   const items = list.length
-    ? `<ul class="meetups">${list.map((m) => meetupCard(m, me, goingIds.has(m.id), now)).join("")}</ul>`
+    ? `<ul class="meetups grid">${list.map((m) => meetupCard(m, me, goingIds.has(m.id), now)).join("")}</ul>`
     : `<p class="empty">Nothing on yet. Be the first. Someone's probably waiting for this.</p>`;
-  const log = past.length
-    ? `<h2>Already happened</h2><ul class="log">${past
-        .map(
-          (m) =>
-            `<li>${esc(formatDay(m.starts_at))} · ${esc(m.place)} · ${m.going} went</li>`,
-        )
-        .join("")}</ul>`
+  const logList = `<ul class="log">${past
+    .map(
+      (m) =>
+        `<li>${esc(formatDay(m.starts_at))} · ${esc(m.place)} · ${m.going} went</li>`,
+    )
+    .join("")}</ul>`;
+  // Folded away on a phone, where the list matters more; open beside the form
+  // on a wide screen. Plain <details>, so it works without script.
+  const logPhone = past.length
+    ? `<details class="past mobile-only"><summary>Already happened (${past.length})</summary>${logList}</details>`
+    : "";
+  const logWide = past.length
+    ? `<section class="web-only"><h2>Already happened</h2>${logList}</section>`
     : "";
   return `
+<div class="cols">
+<div>
 <h1 style="color:${interest.colour}">${esc(interest.name)}</h1>
 <p class="lede">${esc(interest.blurb)}</p>
 <h2>Coming up</h2>
 <div data-live="coming">${items}</div>
-<h2>Or start one</h2>
-${me ? form : nicknameForm(`/i/${interest.slug}#host`)}
-${log}`;
+${logPhone}
+</div>
+<aside class="side">
+${me ? form : `<div id="host">${nicknameForm(`/i/${interest.slug}#host`)}</div>`}
+${logWide}
+</aside>
+</div>
+<a class="fab" href="#host">+ Start one</a>`;
 }
 
 export function meetupPage(

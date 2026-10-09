@@ -77,3 +77,13 @@ export function relative(ms: number, now: number): string {
   const days = Math.round(hours / 24);
   return days === 1 ? "tomorrow" : `in ${days} days`;
 }
+
+// The next-up card splits "Tue 7 Oct, 6:00 pm" so the time can be big.
+const timeFmt = new Intl.DateTimeFormat("en-AU", { timeZone: TZ, hour: "numeric", minute: "2-digit" });
+export function formatTime(ms: number): string {
+  return timeFmt.format(new Date(ms));
+}
+const dateFmt = new Intl.DateTimeFormat("en-AU", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" });
+export function formatDate(ms: number): string {
+  return dateFmt.format(new Date(ms));
+}
