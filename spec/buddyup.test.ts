@@ -1,4 +1,4 @@
-import { describe, expect, inject, it } from "vitest";
+import { afterEach, describe, expect, inject, it } from "vitest";
 import { toSydneyInput } from "../src/time.ts";
 
 // The testable parts of README "How good is checked", against the running app.
@@ -400,6 +400,143 @@ describe("persistence: your trace is there when you come back", () => {
     const back = await get("/", hostP.cookie);
     expect(back).toContain(place);
     expect(back).toContain(hostP.name);
+  });
+});
+
+// A page that's already open hears about a change. Every stream opened here is
+// aborted afterwards: the harness doesn't own the app, so nothing would close
+// them for us and vitest would sit waiting on the socket.
+const streaming = new Set<AbortController>();
+afterEach(() => {
+  for (const ac of streaming) ac.abort();
+  streaming.clear();
+});
+
+async function listen(
+  topics: string,
+  cookie = "",
+): Promise<{ res: Response; next: (ms?: number) => Promise<string | null> }> {
+  const ac = new AbortController();
+  streaming.add(ac);
+  const res = await fetch(
+    new URL(`/events?topics=${encodeURIComponent(topics)}`, baseUrl),
+    {
+      headers: { accept: "text/event-stream", cookie },
+      signal: ac.signal,
+    },
+  );
+  // The server registers a subscriber before it writes the headers, so by the
+  // time this resolves it is listening — a change published next cannot be
+  // missed, and the test needs no sleep to avoid the race.
+  const frames = events(res);
+  return {
+    res,
+    next: (ms = 5000) =>
+      Promise.race([
+        frames.next().then((r) => (r.done ? null : r.value)),
+        new Promise<null>((resolve) => {
+          const t = setTimeout(() => resolve(null), ms);
+          if (typeof t === "object") t.unref?.();
+        }),
+      ]),
+  };
+}
+
+// SSE frames are separated by a blank line and can split across chunks.
+// Comment-only frames are the heartbeat, not an event.
+async function* events(res: Response): AsyncGenerator<string> {
+  if (!res.body) return;
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+    buffer += decoder.decode(chunk, { stream: true });
+    let at: number;
+    while ((at = buffer.indexOf("\n\n")) !== -1) {
+      const frame = buffer.slice(0, at);
+      buffer = buffer.slice(at + 2);
+      if (frame.includes("data:")) yield frame;
+    }
+  }
+}
+
+describe("live: a change reaches a page that's already open", () => {
+  it("tells an open meetup page that someone joined", async () => {
+    const hostP = await person();
+    const guest = await person();
+    const id = await host(hostP.cookie);
+
+    const watcher = await listen(`m:${id}`);
+    expect(watcher.res.status).toBe(200);
+    expect(watcher.res.headers.get("content-type")).toMatch(
+      /^text\/event-stream/,
+    );
+
+    expect((await post(`/m/${id}/join`, {}, guest.cookie)).status).toBe(303);
+    expect(await watcher.next()).toContain("event: change");
+  });
+
+  it("doesn't wake a page for a change it can't see", async () => {
+    const hostP = await person();
+    const guest = await person();
+    const mine = await host(hostP.cookie);
+    const other = await host(hostP.cookie, {}, "running");
+
+    const watcher = await listen(`m:${mine}`);
+    expect((await post(`/m/${other}/join`, {}, guest.cookie)).status).toBe(303);
+    expect(await watcher.next(1200)).toBe(null);
+  });
+
+  // The signal says a topic moved and nothing else. Everything a page then
+  // shows comes from re-fetching it under the viewer's own cookie, so the
+  // stream itself never has to be trusted with who may see what.
+  it("carries no one's name or place down the wire", async () => {
+    const hostP = await person();
+    const guest = await person();
+    const place = `Secret Garden ${tag()}`;
+    const id = await host(hostP.cookie, { place });
+
+    const watcher = await listen(`m:${id}`);
+    expect((await post(`/m/${id}/join`, {}, guest.cookie)).status).toBe(303);
+    const frame = await watcher.next();
+    expect(frame).toContain("event: change");
+    expect(frame).not.toContain(guest.name);
+    expect(frame).not.toContain(place);
+  });
+
+  // A browser gives up on an EventSource for good if the response isn't 200
+  // text/event-stream. Turning someone away has to still look like a stream,
+  // or that tab is silently dead until the person reloads.
+  it("turns an over-limit connection away without killing it", async () => {
+    const crowd = await person();
+    for (let i = 0; i < 3; i++) {
+      expect((await listen("i:coffee", crowd.cookie)).res.status).toBe(200);
+    }
+    const refused = await listen("i:coffee", crowd.cookie);
+    expect(refused.res.status).toBe(200);
+    expect(refused.res.headers.get("content-type")).toMatch(
+      /^text\/event-stream/,
+    );
+    expect(await refused.res.text()).toContain("retry:");
+  });
+
+  it("refuses nonsense topics instead of tracking them", async () => {
+    for (const topics of ["", "not-a-topic", "m:" + "9".repeat(40)]) {
+      const res = await listen(topics);
+      expect(res.res.status).toBe(200);
+      expect(await res.res.text()).toContain("retry:");
+    }
+  });
+
+  // CLAUDE.md: script may enhance a page, never be required.
+  it("still works with the script off", async () => {
+    const hostP = await person();
+    const id = await host(hostP.cookie);
+    const html = await get(`/m/${id}`);
+    // the state and the way to act on it are both in the HTML already
+    expect(html).toContain("1/4 going");
+    expect(html).toContain(`action="/m/${id}/join"`);
+    // nothing to download and no build step: whatever script there is, is inline
+    expect(html).not.toMatch(/<script[^>]+src=/);
   });
 });
 

@@ -56,6 +56,8 @@ These are tested in `spec/`, against the running app:
 - an edited meetup says exactly what changed (time, place, head count, note),
   and nothing else
 - a meetup and its people are still there on a fresh visit
+- a change reaches a page that's already open, without a reload
+- every page still works with its script switched off
 
 These can only be judged:
 
@@ -79,4 +81,5 @@ These can only be judged:
 ## Status
 
 Crit 8: start, join, leave or edit a meetup; it's still there when you come
-back. Next: real-time updates, meeting points, a notice board, check-in.
+back. Crit 9 so far: a meeting point separate from the general place, and
+pages that keep up as things change. Next: a notice board, check-in.
