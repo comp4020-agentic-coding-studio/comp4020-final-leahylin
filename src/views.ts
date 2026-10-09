@@ -22,19 +22,72 @@ function where(place: string, meetingPoint: string, cls = "place"): string {
   }`;
 }
 
-export function nicknameForm(next: string, current = "", error = ""): string {
+// Changing how you appear; the username you sign in with doesn't change.
+export function nameForm(current: string, error = ""): string {
   return `
 <form method="post" action="/me">
   <fieldset>
-    <legend>${current ? "Change your nickname" : "First, what should people call you?"}</legend>
-    ${error ? `<p class="error">${esc(error)}</p>` : ""}
-    <label for="name">Nickname</label>
+    <legend>Change your display name</legend>
+    ${error ? `<p class="error" role="alert">${esc(error)}</p>` : ""}
+    <label for="name">Display name</label>
     <input id="name" name="name" maxlength="24" required value="${esc(current)}" placeholder="e.g. Escaped ANU">
-    <p class="hint">No account, no email. This browser remembers you. Others see this name when you join something.</p>
-    <input type="hidden" name="next" value="${esc(next)}">
-    <button type="submit">${current ? "Save" : "That's me"}</button>
+    <p class="hint">People going to the same meetup see this name.</p>
+    <button type="submit">Save</button>
   </fieldset>
 </form>`;
+}
+
+export interface AuthValues {
+  username?: string;
+  name?: string;
+}
+
+// The password is never written back into a form, even after an error.
+export function loginForm(next: string, values: AuthValues = {}, error = ""): string {
+  return `
+<form method="post" action="/login" id="login">
+  <fieldset>
+    <legend>Log in</legend>
+    ${error ? `<p class="error" role="alert">${esc(error)}</p>` : ""}
+    <label for="username">Username</label>
+    <input id="username" name="username" autocomplete="username" autocapitalize="none" required value="${esc(values.username ?? "")}">
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <input type="hidden" name="next" value="${esc(next)}">
+    <button type="submit">Log in</button>
+  </fieldset>
+</form>
+<p>New here? <a href="/signup?next=${encodeURIComponent(next)}">Make an account</a></p>`;
+}
+
+export function signupForm(next: string, values: AuthValues = {}, error = ""): string {
+  return `
+<form method="post" action="/signup" id="signup">
+  <fieldset>
+    <legend>Make an account</legend>
+    ${error ? `<p class="error" role="alert">${esc(error)}</p>` : ""}
+    <label for="username">Username</label>
+    <input id="username" name="username" autocomplete="username" autocapitalize="none" required minlength="3" maxlength="20" pattern="[a-z0-9_]{3,20}" value="${esc(values.username ?? "")}">
+    <p class="hint">3 to 20 lowercase letters, numbers or _. Friends find you by this.</p>
+    <label for="name">Display name</label>
+    <input id="name" name="name" maxlength="24" required value="${esc(values.name ?? "")}" placeholder="e.g. Escaped ANU">
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="200">
+    <p class="hint">At least 8 characters. There's no email and no reset, so keep it somewhere safe.</p>
+    <input type="hidden" name="next" value="${esc(next)}">
+    <button type="submit">Make my account</button>
+  </fieldset>
+</form>
+<p>Already have one? <a href="/login?next=${encodeURIComponent(next)}">Log in</a></p>`;
+}
+
+// Signed out, there is nothing to see but what this is and the way in.
+export function welcome(): string {
+  return `
+<h1>What do you want company for?</h1>
+<p class="lede">Running, badminton or coffee, with people you already know: your circle or your friends.</p>
+<p class="auth-actions"><a class="button" href="/signup">Make an account</a> <a class="button quiet" href="/login">Log in</a></p>
+<p class="hint">Nothing here is public. You only see meetups from people you know. <a href="/readme/">What this is, and why</a></p>`;
 }
 
 function spots(m: Meetup): string {
@@ -191,10 +244,7 @@ export function home(
   const interests = `<h2>Interests</h2>\n<div class="interests row3">${cards}</div>`;
   const intro = `<h1>What do you want company for?</h1>
 <p class="lede">Pick a thing. Join someone who's going, or say when and where you are.</p>`;
-  // Signed out, the live part is just the counts: the form must not be swapped
-  // out from under someone typing their name into it.
-  if (!me)
-    return `${intro}\n${nicknameForm("/")}\n<h2>Interests</h2>\n<div class="interests row3" data-live="counts">${cards}</div>`;
+  if (!me) return welcome();
 
   // With plans, they come first: opening the app should tell you where to be.
   const next = mine.find((m) => m.cancelled_at === null);
@@ -311,7 +361,7 @@ export function interestPage(
 ${logPhone}
 </div>
 <aside class="side">
-${me ? form : `<div id="host">${nicknameForm(`/i/${interest.slug}#host`)}</div>`}
+${form}
 ${logWide}
 </aside>
 </div>
@@ -333,7 +383,7 @@ export function meetupPage(
 <h2>Who's going</h2>
 <ul class="people">${people.map((p) => `<li>${esc(p.name)}</li>`).join("")}</ul>
 </div>
-${me ? "" : nicknameForm(`/m/${m.id}`)}`;
+`;
 }
 
 export function message(title: string, text: string, back: string): string {

@@ -19,21 +19,34 @@ async function post(
   });
 }
 
-async function get(path: string, cookie = ""): Promise<string> {
-  const res = await fetch(new URL(path, baseUrl), { headers: { cookie } });
-  expect(res.status).toBe(200);
-  return res.text();
-}
-
-// a person is a nickname; the app hands back a cookie that identifies them
+// a person is an account: username, display name, password; signing up
+// hands back a session cookie that identifies them
+const PASSWORD = "correct horse battery";
 async function person(
   name = `tester-${tag()}`,
-): Promise<{ name: string; cookie: string }> {
-  const res = await post("/me", { name, next: "/" });
+): Promise<{ name: string; username: string; cookie: string }> {
+  const username = `t_${tag()}${tag()}`.slice(0, 20);
+  const res = await post("/signup", { username, name, password: PASSWORD, next: "/" });
   expect(res.status).toBe(303);
   const set = res.headers.get("set-cookie") ?? "";
   expect(set).toMatch(/HttpOnly/i);
-  return { name, cookie: set.split(";")[0] };
+  return { name, username, cookie: set.split(";")[0] };
+}
+
+// Nothing is public, so every page is looked at by someone signed in. Tests
+// that don't care who is looking share one bystander.
+let bystander: Promise<string> | null = null;
+function anyone(): Promise<string> {
+  bystander ??= person("bystander").then((p) => p.cookie);
+  return bystander;
+}
+
+async function get(path: string, cookie?: string): Promise<string> {
+  const res = await fetch(new URL(path, baseUrl), {
+    headers: { cookie: cookie ?? (await anyone()) },
+  });
+  expect(res.status).toBe(200);
+  return res.text();
 }
 
 function meetupFields(
@@ -388,14 +401,14 @@ describe("you're going to: opening the app tells you where to be", () => {
 });
 
 describe("persistence: your trace is there when you come back", () => {
-  it("shows a meetup and who's going to a fresh visitor, and to the host on return", async () => {
+  it("shows a meetup and who's going on a fresh visit, and to the host on return", async () => {
     const hostP = await person();
     const place = `Coffee Grounds ${tag()}`;
     const id = await host(hostP.cookie, { place });
 
-    const stranger = await get(`/m/${id}`); // no cookie at all
-    expect(stranger).toContain(place);
-    expect(stranger).toContain(hostP.name);
+    const someone = await get(`/m/${id}`);
+    expect(someone).toContain(place);
+    expect(someone).toContain(hostP.name);
 
     const back = await get("/", hostP.cookie);
     expect(back).toContain(place);
@@ -414,14 +427,14 @@ afterEach(() => {
 
 async function listen(
   topics: string,
-  cookie = "",
+  cookie?: string,
 ): Promise<{ res: Response; next: (ms?: number) => Promise<string | null> }> {
   const ac = new AbortController();
   streaming.add(ac);
   const res = await fetch(
     new URL(`/events?topics=${encodeURIComponent(topics)}`, baseUrl),
     {
-      headers: { accept: "text/event-stream", cookie },
+      headers: { accept: "text/event-stream", cookie: cookie ?? (await anyone()) },
       signal: ac.signal,
     },
   );
@@ -549,5 +562,76 @@ describe("safety", () => {
     const html = await get(`/m/${id}`);
     expect(html).not.toContain("<script>alert(1)</script>");
     expect(html).toContain("&lt;script&gt;");
+  });
+});
+
+describe("accounts: only people who signed in, as themselves", () => {
+  it("shows a signed-out visitor nothing but the way in", async () => {
+    const hostP = await person();
+    const place = `Hidden Lawn ${tag()}`;
+    const id = await host(hostP.cookie, { place });
+    for (const path of [`/m/${id}`, "/i/coffee"]) {
+      const res = await fetch(new URL(path, baseUrl), { redirect: "manual" });
+      expect(res.status).toBe(303);
+      expect(res.headers.get("location")).toMatch(/^\/login\?next=/);
+    }
+    const home = await (await fetch(new URL("/", baseUrl))).text();
+    expect(home).not.toContain(place);
+    expect(home).toContain('href="/login"');
+    // and signed out, nothing can be done either
+    const join = await post(`/m/${id}/join`, {});
+    expect(join.headers.get("location")).toBe("/login");
+    const watcher = await listen(`m:${id}`, "");
+    expect(await watcher.res.text()).toContain("retry:");
+  });
+
+  it("refuses a username that's taken, whatever its case", async () => {
+    const p = await person();
+    const res = await post("/signup", { username: p.username.toUpperCase(), name: "copy", password: PASSWORD });
+    expect(res.status).toBe(400);
+  });
+
+  it("refuses a short password or a malformed username", async () => {
+    expect((await post("/signup", { username: `t_${tag()}`, name: "x", password: "short" })).status).toBe(400);
+    expect((await post("/signup", { username: "no spaces here", name: "x", password: PASSWORD })).status).toBe(400);
+  });
+
+  it("logs in with the right password, and says the same thing for any wrong one", async () => {
+    const p = await person();
+    const ok = await post("/login", { username: p.username, password: PASSWORD });
+    expect(ok.status).toBe(303);
+    expect(ok.headers.get("set-cookie")).toMatch(/HttpOnly/i);
+
+    const wrongPass = await post("/login", { username: p.username, password: "not it at all" });
+    const noSuchUser = await post("/login", { username: `nobody_${tag()}`, password: PASSWORD });
+    expect(wrongPass.status).toBe(401);
+    expect(noSuchUser.status).toBe(401);
+    const a = await wrongPass.text();
+    const b = await noSuchUser.text();
+    expect(a).toContain("Username or password is wrong.");
+    expect(b).toContain("Username or password is wrong.");
+    // and the password typed is never echoed back into the page
+    expect(a).not.toContain("not it at all");
+  });
+
+  it("ends the session on log out, and only that one", async () => {
+    const p = await person();
+    const other = await post("/login", { username: p.username, password: PASSWORD });
+    const laptop = (other.headers.get("set-cookie") ?? "").split(";")[0];
+
+    expect((await post("/logout", {}, p.cookie)).status).toBe(303);
+    const after = await fetch(new URL("/i/coffee", baseUrl), { headers: { cookie: p.cookie }, redirect: "manual" });
+    expect(after.status).toBe(303);
+    expect(await get("/i/coffee", laptop)).toContain("Coffee");
+  });
+
+  it("locks a username after five wrong guesses, even against the right password", async () => {
+    const p = await person();
+    for (let i = 0; i < 5; i++) {
+      expect((await post("/login", { username: p.username, password: `guess ${i} wrong` })).status).toBe(401);
+    }
+    const right = await post("/login", { username: p.username, password: PASSWORD });
+    expect(right.status).toBe(429);
+    expect(right.headers.get("set-cookie")).toBe(null);
   });
 });

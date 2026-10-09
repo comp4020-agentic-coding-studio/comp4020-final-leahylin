@@ -62,11 +62,59 @@ addColumn("meetups", "note_changed_at", "INTEGER");
 addColumn("meetups", "meeting_point", "TEXT NOT NULL DEFAULT ''");
 addColumn("meetups", "meeting_point_changed_at", "INTEGER");
 
+// Accounts (decision 4): a person is now a username, a display name and a
+// password hash. The old nickname-and-cookie columns stay (additive
+// migrations only); `token` is filled with random bytes nobody holds.
+addColumn("people", "username", "TEXT");
+addColumn("people", "pass_hash", "TEXT");
+db.exec(`
+  CREATE UNIQUE INDEX IF NOT EXISTS people_by_username ON people (username)
+    WHERE username IS NOT NULL;
+
+  -- one row per signed-in browser, so logging out on a phone leaves the
+  -- laptop signed in
+  CREATE TABLE IF NOT EXISTS sessions (
+    token      TEXT    PRIMARY KEY,
+    person_id  INTEGER NOT NULL REFERENCES people(id),
+    created_at INTEGER NOT NULL
+  );
+
+  -- failed logins per username, kept in the database so a restart doesn't
+  -- reset someone's guesses
+  CREATE TABLE IF NOT EXISTS login_failures (
+    username TEXT    NOT NULL,
+    at       INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS login_failures_by_username ON login_failures (username, at);
+`);
+
+// Decision 4: crit 8's people were nicknames with no password, so there is
+// nothing to carry over. Cleared exactly once, recorded in user_version.
+{
+  const { user_version } = db.prepare("PRAGMA user_version").get() as { user_version: number };
+  if (user_version < 1) {
+    db.exec(`
+      BEGIN IMMEDIATE;
+      DELETE FROM joins WHERE person_id IN (SELECT id FROM people WHERE username IS NULL)
+        OR meetup_id IN (SELECT m.id FROM meetups m JOIN people p ON p.id = m.host_id WHERE p.username IS NULL);
+      DELETE FROM meetups WHERE host_id IN (SELECT id FROM people WHERE username IS NULL);
+      DELETE FROM people WHERE username IS NULL;
+      PRAGMA user_version = 1;
+      COMMIT;
+    `);
+  }
+}
+
 export interface Person {
   id: number;
-  token: string;
+  username: string;
   name: string;
 }
+
+export const SESSION_DAYS = 90;
+const SESSION_MS = SESSION_DAYS * 24 * 60 * 60 * 1000;
+export const LOCK_AFTER = 5;
+export const LOCK_MS = 15 * 60 * 1000;
 
 export interface Meetup {
   id: number;
@@ -98,12 +146,26 @@ const meetupCols = `
   (SELECT COUNT(*) FROM joins j WHERE j.meetup_id = m.id) AS going`;
 
 const q = {
-  personByToken: db.prepare(
-    "SELECT id, token, name FROM people WHERE token = ?",
+  personBySession: db.prepare(
+    `SELECT p.id, p.username, p.name FROM sessions s JOIN people p ON p.id = s.person_id
+     WHERE s.token = ? AND s.created_at > ?`,
   ),
   insertPerson: db.prepare(
-    "INSERT INTO people (token, name, created_at) VALUES (?, ?, ?) RETURNING id, token, name",
+    `INSERT INTO people (token, name, username, pass_hash, created_at) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT DO NOTHING RETURNING id, username, name`,
   ),
+  loginRow: db.prepare("SELECT id, pass_hash FROM people WHERE username = ?"),
+  insertSession: db.prepare(
+    "INSERT INTO sessions (token, person_id, created_at) VALUES (?, ?, ?)",
+  ),
+  deleteSession: db.prepare("DELETE FROM sessions WHERE token = ?"),
+  recordFailure: db.prepare(
+    "INSERT INTO login_failures (username, at) VALUES (?, ?)",
+  ),
+  countFailures: db.prepare(
+    "SELECT COUNT(*) AS n, MAX(at) AS last FROM login_failures WHERE username = ? AND at > ?",
+  ),
+  clearFailures: db.prepare("DELETE FROM login_failures WHERE username = ?"),
   renamePerson: db.prepare("UPDATE people SET name = ? WHERE id = ?"),
   meetup: db.prepare(
     `SELECT ${meetupCols} FROM meetups m JOIN people h ON h.id = m.host_id WHERE m.id = ?`,
@@ -167,14 +229,46 @@ function tx<T>(fn: () => T): T {
   }
 }
 
-export function personByToken(token: string | undefined): Person | null {
+export function personBySession(token: string | undefined, now: number): Person | null {
   if (!token) return null;
-  return (q.personByToken.get(token) as Person | undefined) ?? null;
+  return (q.personBySession.get(token, now - SESSION_MS) as Person | undefined) ?? null;
 }
 
-export function createPerson(name: string): Person {
-  const token = randomBytes(24).toString("base64url");
-  return q.insertPerson.get(token, name, Date.now()) as unknown as Person;
+// null when the username is taken (the unique index decides, not a racy check)
+export function createAccount(username: string, name: string, passHash: string): Person | null {
+  const unused = randomBytes(24).toString("base64url");
+  return (
+    (q.insertPerson.get(unused, name, username, passHash, Date.now()) as Person | undefined) ?? null
+  );
+}
+
+export function loginRow(username: string): { id: number; pass_hash: string } | null {
+  return (q.loginRow.get(username) as { id: number; pass_hash: string } | undefined) ?? null;
+}
+
+export function createSession(personId: number): string {
+  const token = randomBytes(32).toString("base64url");
+  q.insertSession.run(token, personId, Date.now());
+  return token;
+}
+
+export function deleteSession(token: string): void {
+  q.deleteSession.run(token);
+}
+
+// Locked when there have been LOCK_AFTER failures in the last LOCK_MS; stays
+// locked until LOCK_MS after the most recent one.
+export function lockedUntil(username: string, now: number): number | null {
+  const { n, last } = q.countFailures.get(username, now - LOCK_MS) as { n: number; last: number | null };
+  return n >= LOCK_AFTER && last !== null ? last + LOCK_MS : null;
+}
+
+export function recordFailure(username: string, now: number): void {
+  q.recordFailure.run(username, now);
+}
+
+export function clearFailures(username: string): void {
+  q.clearFailures.run(username);
 }
 
 export function renamePerson(id: number, name: string): void {

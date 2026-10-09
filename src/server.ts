@@ -7,13 +7,20 @@ import { readFileSync } from "node:fs";
 import { marked } from "marked";
 import * as db from "./db.ts";
 import * as events from "./events.ts";
+import * as auth from "./auth.ts";
 import { findInterest, INTERESTS } from "./interests.ts";
 import { page } from "./html.ts";
 import { parseSydney, toSydneyInput } from "./time.ts";
 import * as views from "./views.ts";
 
-const COOKIE = "buddyup";
-const YEAR_S = 365 * 24 * 60 * 60;
+// A new name, so crit 8's nickname cookie is simply ignored rather than misread.
+const COOKIE = "buddyup_session";
+const SESSION_S = db.SESSION_DAYS * 24 * 60 * 60;
+
+function sessionCookie(req: IncomingMessage, token: string, maxAge: number): string {
+  const secure = req.headers["x-forwarded-proto"] === "https" ? "; Secure" : "";
+  return `${COOKIE}=${token}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${secure}`;
+}
 
 function cookies(req: IncomingMessage): Record<string, string> {
   const out: Record<string, string> = {};
@@ -106,8 +113,8 @@ async function handle(
   const url = new URL(req.url ?? "/", "http://local");
   const path = url.pathname;
   const method = req.method ?? "GET";
-  const me = db.personByToken(cookies(req)[COOKIE]);
   const now = Date.now();
+  const me = db.personBySession(cookies(req)[COOKIE], now);
   const who = me?.name ?? null;
   let m: RegExpExecArray | null;
 
@@ -118,6 +125,7 @@ async function handle(
     const topics = events.parseTopics(url.searchParams.get("topics"));
     if (
       topics.size === 0 ||
+      !me ||
       !events.subscribe(req, res, topics, me?.id ?? null)
     )
       events.decline(res);
@@ -133,10 +141,9 @@ async function handle(
         title: "Buddy Up",
         who,
         // the counts for every interest, plus whatever you're going to
-        topics: [
-          ...INTERESTS.map((i) => `i:${i.slug}`),
-          ...mine.map((m) => `m:${m.id}`),
-        ],
+        topics: me
+          ? [...INTERESTS.map((i) => `i:${i.slug}`), ...mine.map((m) => `m:${m.id}`)]
+          : undefined,
         body: views.home(me, db.upcomingCounts(now), mine, db.attendees, now),
       }),
     );
@@ -151,47 +158,90 @@ async function handle(
     );
   }
 
+  // Accounts (decision 4). Signing up or in sets a session cookie; the
+  // password itself goes no further than the hash.
+  if (method === "GET" && (path === "/login" || path === "/signup")) {
+    const next = safeNext(url.searchParams.get("next"));
+    if (me) return redirect(res, next);
+    const body = path === "/login" ? views.loginForm(next) : views.signupForm(next);
+    return send(res, 200, page({ title: path === "/login" ? "Log in" : "Make an account", who, body }));
+  }
+
+  if (method === "POST" && path === "/signup") {
+    const f = await form(req);
+    const next = safeNext(f.get("next"));
+    const username = (f.get("username") ?? "").trim().toLowerCase();
+    const name = clean(f.get("name"), 24);
+    const password = f.get("password") ?? "";
+    const values = { username, name };
+    let error = "";
+    if (!auth.USERNAME.test(username))
+      error = "Usernames are 3 to 20 lowercase letters, numbers or _.";
+    else if (!name) error = "Add a display name, so people know who's coming.";
+    else if (password.length < auth.MIN_PASSWORD || password.length > auth.MAX_PASSWORD)
+      error = `Passwords are at least ${auth.MIN_PASSWORD} characters.`;
+    let person: db.Person | null = null;
+    if (!error) {
+      person = db.createAccount(username, name, await auth.hashPassword(password));
+      if (!person) error = "That username is taken. Try another.";
+    }
+    if (error || !person)
+      return send(res, 400, page({ title: "Make an account", who, body: views.signupForm(next, values, error) }));
+    return redirect(res, next, {
+      "set-cookie": sessionCookie(req, db.createSession(person.id), SESSION_S),
+    });
+  }
+
+  if (method === "POST" && path === "/login") {
+    const f = await form(req);
+    const next = safeNext(f.get("next"));
+    const username = (f.get("username") ?? "").trim().toLowerCase().slice(0, 40);
+    const password = (f.get("password") ?? "").slice(0, auth.MAX_PASSWORD);
+    const show = (status: number, error: string) =>
+      send(res, status, page({ title: "Log in", who, body: views.loginForm(next, { username }, error) }));
+
+    // Too many wrong guesses: refuse even the right password until it cools off.
+    const until = db.lockedUntil(username, now);
+    if (until !== null) {
+      const mins = Math.max(1, Math.ceil((until - now) / 60000));
+      return show(429, `Too many tries. Wait ${mins} minute${mins === 1 ? "" : "s"} and try again.`);
+    }
+    const row = db.loginRow(username);
+    const ok = row ? await auth.verifyPassword(password, row.pass_hash) : (await auth.burnTime(password), false);
+    if (!ok || !row) {
+      db.recordFailure(username, now);
+      // one message for both, so it doesn't say which usernames exist
+      return show(401, "Username or password is wrong.");
+    }
+    db.clearFailures(username);
+    return redirect(res, next, {
+      "set-cookie": sessionCookie(req, db.createSession(row.id), SESSION_S),
+    });
+  }
+
+  if (method === "POST" && path === "/logout") {
+    const token = cookies(req)[COOKIE];
+    if (token) db.deleteSession(token);
+    return redirect(res, "/", { "set-cookie": sessionCookie(req, "", 0) });
+  }
+
+  // Everything past here is for people who are signed in. Nothing is public.
+  if (!me) {
+    if (method === "GET") return redirect(res, `/login?next=${encodeURIComponent(path + url.search)}`);
+    return redirect(res, "/login");
+  }
+
   if (method === "GET" && path === "/me") {
-    return send(
-      res,
-      200,
-      page({
-        title: "Nickname",
-        who,
-        body: views.nicknameForm("/", me?.name ?? ""),
-      }),
-    );
+    return send(res, 200, page({ title: "Display name", who, body: views.nameForm(me.name) }));
   }
 
   if (method === "POST" && path === "/me") {
     const f = await form(req);
     const name = clean(f.get("name"), 24);
-    const next = safeNext(f.get("next"));
-    if (!name) {
-      return send(
-        res,
-        400,
-        page({
-          title: "Nickname",
-          who,
-          body: views.nicknameForm(
-            next,
-            "",
-            "A nickname needs at least one character.",
-          ),
-        }),
-      );
-    }
-    if (me) {
-      db.renamePerson(me.id, name);
-      return redirect(res, next);
-    }
-    const person = db.createPerson(name);
-    const secure =
-      req.headers["x-forwarded-proto"] === "https" ? "; Secure" : "";
-    return redirect(res, next, {
-      "set-cookie": `${COOKIE}=${person.token}; Path=/; Max-Age=${YEAR_S}; HttpOnly; SameSite=Lax${secure}`,
-    });
+    if (!name)
+      return send(res, 400, page({ title: "Display name", who, body: views.nameForm("", "A display name needs at least one character.") }));
+    db.renamePerson(me.id, name);
+    return redirect(res, "/");
   }
 
   if ((m = /^\/i\/([a-z]+)$/.exec(path)) && method === "GET") {
