@@ -221,9 +221,9 @@ export function hostForm(
     <label for="starts_at">When</label>
     <input id="starts_at" name="starts_at" type="datetime-local" required min="${soonest}" max="${latest}" value="${esc(values.starts_at ?? "")}">
     <p class="hint">Within the next 7 days. Canberra time.</p>
-    <label for="place">Where, exactly</label>
+    <label for="place">Where</label>
     <input id="place" name="place" required maxlength="80" placeholder="${esc(interest.placeHint)}" value="${esc(values.place ?? "")}">
-    <label for="meeting_point">Exact spot to meet <span class="hint">(optional)</span></label>
+    <label for="meeting_point">Meeting point <span class="hint">(optional)</span></label>
     <input id="meeting_point" name="meeting_point" maxlength="80" placeholder="e.g. the clock tower, west entrance" value="${esc(values.meeting_point ?? "")}">
     <label for="capacity">How many people, including you</label>
     <input id="capacity" name="capacity" type="number" min="${minCapacity}" max="12" required value="${esc(values.capacity ?? "4")}">
