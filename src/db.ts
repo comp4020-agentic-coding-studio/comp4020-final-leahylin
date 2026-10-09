@@ -58,6 +58,9 @@ addColumn("meetups", "time_changed_at", "INTEGER");
 addColumn("meetups", "place_changed_at", "INTEGER");
 addColumn("meetups", "capacity_changed_at", "INTEGER");
 addColumn("meetups", "note_changed_at", "INTEGER");
+// the exact spot to meet, separate from the general place — optional, like note
+addColumn("meetups", "meeting_point", "TEXT NOT NULL DEFAULT ''");
+addColumn("meetups", "meeting_point_changed_at", "INTEGER");
 
 export interface Person {
   id: number;
@@ -72,11 +75,13 @@ export interface Meetup {
   host_name: string;
   starts_at: number;
   place: string;
+  meeting_point: string;
   capacity: number;
   note: string;
   cancelled_at: number | null;
   time_changed_at: number | null;
   place_changed_at: number | null;
+  meeting_point_changed_at: number | null;
   capacity_changed_at: number | null;
   note_changed_at: number | null;
   going: number;
@@ -87,9 +92,9 @@ export const RUNS_FOR_MS = 2 * 60 * 60 * 1000;
 export const MAX_AHEAD_MS = 7 * 24 * 60 * 60 * 1000;
 
 const meetupCols = `
-  m.id, m.interest, m.host_id, h.name AS host_name, m.starts_at, m.place,
+  m.id, m.interest, m.host_id, h.name AS host_name, m.starts_at, m.place, m.meeting_point,
   m.capacity, m.note, m.cancelled_at,
-  m.time_changed_at, m.place_changed_at, m.capacity_changed_at, m.note_changed_at,
+  m.time_changed_at, m.place_changed_at, m.meeting_point_changed_at, m.capacity_changed_at, m.note_changed_at,
   (SELECT COUNT(*) FROM joins j WHERE j.meetup_id = m.id) AS going`;
 
 const q = {
@@ -123,8 +128,8 @@ const q = {
     "SELECT 1 FROM joins WHERE meetup_id = ? AND person_id = ?",
   ),
   insertMeetup:
-    db.prepare(`INSERT INTO meetups (interest, host_id, starts_at, place, capacity, note, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`),
+    db.prepare(`INSERT INTO meetups (interest, host_id, starts_at, place, meeting_point, capacity, note, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`),
   insertJoin: db.prepare(
     "INSERT INTO joins (meetup_id, person_id, joined_at) VALUES (?, ?, ?)",
   ),
@@ -135,8 +140,8 @@ const q = {
     "UPDATE meetups SET cancelled_at = ? WHERE id = ? AND cancelled_at IS NULL",
   ),
   update:
-    db.prepare(`UPDATE meetups SET starts_at = ?, place = ?, capacity = ?, note = ?,
-    time_changed_at = ?, place_changed_at = ?, capacity_changed_at = ?, note_changed_at = ? WHERE id = ?`),
+    db.prepare(`UPDATE meetups SET starts_at = ?, place = ?, meeting_point = ?, capacity = ?, note = ?,
+    time_changed_at = ?, place_changed_at = ?, meeting_point_changed_at = ?, capacity_changed_at = ?, note_changed_at = ? WHERE id = ?`),
 };
 
 // joined_at and the *_changed_at columns only ever get compared against each
@@ -219,6 +224,7 @@ export interface NewMeetup {
   hostId: number;
   startsAt: number;
   place: string;
+  meetingPoint: string;
   capacity: number;
   note: string;
 }
@@ -232,6 +238,7 @@ export function createMeetup(m: NewMeetup): number {
       m.hostId,
       m.startsAt,
       m.place,
+      m.meetingPoint,
       m.capacity,
       m.note,
       now,
@@ -274,6 +281,7 @@ export function cancel(meetupId: number, now: number): void {
 export interface MeetupEdit {
   startsAt: number;
   place: string;
+  meetingPoint: string;
   capacity: number;
   note: string;
 }
@@ -296,10 +304,12 @@ export function editMeetup(
     q.update.run(
       e.startsAt,
       e.place,
+      e.meetingPoint,
       e.capacity,
       e.note,
       e.startsAt !== m.starts_at ? when : m.time_changed_at,
       e.place !== m.place ? when : m.place_changed_at,
+      e.meetingPoint !== m.meeting_point ? when : m.meeting_point_changed_at,
       e.capacity !== m.capacity ? when : m.capacity_changed_at,
       e.note !== m.note ? when : m.note_changed_at,
       meetupId,
