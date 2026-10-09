@@ -156,11 +156,17 @@ function push(stream: Stream, frame: string): void {
 // Called after a write has committed, never from inside db.ts's tx(): a publish
 // from inside a transaction that then rolled back would announce something that
 // never happened.
-export function publish(topics: string[]): void {
+// `mayKnow` decides who hears it at all (decision 4). A signal carries no
+// content, but "the running list just moved" still tells you a meetup exists,
+// so a change only reaches people who can see the meetup it's about.
+export function publish(
+  topics: string[],
+  mayKnow: (personId: number | null) => boolean = () => true,
+): void {
   if (streams.size === 0) return;
   const frame = `event: change\ndata: ${JSON.stringify({ topics })}\n\n`;
   for (const stream of [...streams]) {
-    if (topics.some((t) => stream.topics.has(t))) push(stream, frame);
+    if (topics.some((t) => stream.topics.has(t)) && mayKnow(stream.personId)) push(stream, frame);
   }
 }
 

@@ -57,25 +57,41 @@ function meetupFields(
     place: `Union Court ${tag()}`,
     capacity: "4",
     note: "",
+    audience: "friends",
     ...overrides,
   };
 }
 
-// returns the new meetup's id
+// Since decision 4 every meetup has an audience. Tests that aren't about who
+// sees what post into a fresh circle of the host's, with the shared bystander
+// in it, and anyone the test later has join goes through joinMeetup, which
+// lets them into that circle first. Returns the new meetup's id.
+const circleOfMeetup = new Map<number, string>();
 async function host(
   cookie: string,
   overrides: Record<string, string> = {},
   interest = "coffee",
 ): Promise<number> {
+  const cid = await circle(cookie);
+  const code = await inviteCode(cookie, cid);
+  await post(`/join/${code}`, {}, await anyone());
   const res = await post(
     `/i/${interest}/meetups`,
-    meetupFields(overrides),
+    { ...meetupFields(overrides), audience: `circle:${cid}`, ...overrides },
     cookie,
   );
   expect(res.status).toBe(303);
   const id = Number(/#m(\d+)$/.exec(res.headers.get("location") ?? "")?.[1]);
   expect(id).toBeGreaterThan(0);
+  circleOfMeetup.set(id, code);
   return id;
+}
+
+// join a meetup made by host(), stepping into its circle first
+async function joinMeetup(id: number, cookie: string): Promise<Response> {
+  const code = circleOfMeetup.get(id);
+  if (code) await post(`/join/${code}`, {}, cookie);
+  return post(`/m/${id}/join`, {}, cookie);
 }
 
 describe("commitment 1: every meetup is concrete", () => {
@@ -148,7 +164,7 @@ describe("commitment 3: joining is one action, and so is leaving", () => {
     const guest = await person();
     const id = await host(hostP.cookie, { capacity: "2" });
 
-    expect((await post(`/m/${id}/join`, {}, guest.cookie)).status).toBe(303);
+    expect((await joinMeetup(id, guest.cookie)).status).toBe(303);
     let html = await get(`/m/${id}`);
     expect(html).toContain(guest.name);
     expect(html).toContain("2/2 going");
@@ -167,6 +183,8 @@ describe("commitment 3: joining is one action, and so is leaving", () => {
     const hostP = await person();
     const other = await person();
     const id = await host(hostP.cookie);
+    // someone who can see it, but didn't post it
+    await post(`/join/${circleOfMeetup.get(id)}`, {}, other.cookie);
     expect((await post(`/m/${id}/cancel`, {}, other.cookie)).status).toBe(403);
     expect((await post(`/m/${id}/cancel`, {}, hostP.cookie)).status).toBe(303);
   });
@@ -179,7 +197,7 @@ describe("commitment 4: the head count is real", () => {
     const guests = await Promise.all([1, 2, 3, 4, 5].map(() => person()));
 
     const results = await Promise.all(
-      guests.map((g) => post(`/m/${id}/join`, {}, g.cookie)),
+      guests.map((g) => joinMeetup(id, g.cookie)),
     );
     const statuses = results.map((r) => r.status).sort();
     expect(statuses).toEqual([303, 409, 409, 409, 409]);
@@ -192,6 +210,8 @@ describe("editing: small changes without cancelling", () => {
     const hostP = await person();
     const other = await person();
     const id = await host(hostP.cookie);
+    // someone who can see it, but didn't post it
+    await post(`/join/${circleOfMeetup.get(id)}`, {}, other.cookie);
     expect(
       (
         await fetch(new URL(`/m/${id}/edit`, baseUrl), {
@@ -251,7 +271,7 @@ describe("editing: small changes without cancelling", () => {
     const hostP = await person();
     const id = await host(hostP.cookie, { capacity: "4" });
     for (const g of await Promise.all([person(), person()])) {
-      expect((await post(`/m/${id}/join`, {}, g.cookie)).status).toBe(303);
+      expect((await joinMeetup(id, g.cookie)).status).toBe(303);
     }
     // three going (host + 2): 2 is refused, 3 is fine
     expect(
@@ -355,7 +375,7 @@ describe("you're going to: opening the app tells you where to be", () => {
     const hostP = await person();
     const guest = await person();
     const id = await host(hostP.cookie);
-    expect((await post(`/m/${id}/join`, {}, guest.cookie)).status).toBe(303);
+    expect((await joinMeetup(id, guest.cookie)).status).toBe(303);
     const newPlace = `Hancock steps ${tag()}`;
     expect(
       (
@@ -384,7 +404,7 @@ describe("you're going to: opening the app tells you where to be", () => {
       ).status,
     ).toBe(303);
     await new Promise((r) => setTimeout(r, 5));
-    expect((await post(`/m/${id}/join`, {}, guest.cookie)).status).toBe(303);
+    expect((await joinMeetup(id, guest.cookie)).status).toBe(303);
     expect(await get("/", guest.cookie)).not.toContain("changed:</b>");
   });
 
@@ -392,7 +412,7 @@ describe("you're going to: opening the app tells you where to be", () => {
     const hostP = await person();
     const guest = await person();
     const id = await host(hostP.cookie);
-    expect((await post(`/m/${id}/join`, {}, guest.cookie)).status).toBe(303);
+    expect((await joinMeetup(id, guest.cookie)).status).toBe(303);
     expect((await post(`/m/${id}/cancel`, {}, hostP.cookie)).status).toBe(303);
     expect(await get("/", guest.cookie)).toContain(
       `Called off by ${hostP.name}`,
@@ -484,7 +504,7 @@ describe("live: a change reaches a page that's already open", () => {
       /^text\/event-stream/,
     );
 
-    expect((await post(`/m/${id}/join`, {}, guest.cookie)).status).toBe(303);
+    expect((await joinMeetup(id, guest.cookie)).status).toBe(303);
     expect(await watcher.next()).toContain("event: change");
   });
 
@@ -495,7 +515,7 @@ describe("live: a change reaches a page that's already open", () => {
     const other = await host(hostP.cookie, {}, "running");
 
     const watcher = await listen(`m:${mine}`);
-    expect((await post(`/m/${other}/join`, {}, guest.cookie)).status).toBe(303);
+    expect((await joinMeetup(other, guest.cookie)).status).toBe(303);
     expect(await watcher.next(1200)).toBe(null);
   });
 
@@ -509,7 +529,7 @@ describe("live: a change reaches a page that's already open", () => {
     const id = await host(hostP.cookie, { place });
 
     const watcher = await listen(`m:${id}`);
-    expect((await post(`/m/${id}/join`, {}, guest.cookie)).status).toBe(303);
+    expect((await joinMeetup(id, guest.cookie)).status).toBe(303);
     const frame = await watcher.next();
     expect(frame).toContain("event: change");
     expect(frame).not.toContain(guest.name);
@@ -819,5 +839,130 @@ describe("friends: both ways, and only you see yours", () => {
       expect(html).not.toContain(b.username);
       expect(html).not.toContain(b.name);
     }
+  });
+});
+
+// ---- Who can see a meetup (decision 4, step 4) ----
+// README commitment 5: you only meet people you know.
+
+async function postTo(
+  cookie: string,
+  audience: string,
+  overrides: Record<string, string> = {},
+  interest = "badminton",
+): Promise<{ res: Response; id: number; place: string }> {
+  const place = `Secret court ${tag()}`;
+  const res = await post(`/i/${interest}/meetups`, { ...meetupFields({ place, ...overrides }), audience }, cookie);
+  const id = Number(/#m(\d+)$/.exec(res.headers.get("location") ?? "")?.[1] ?? 0);
+  return { res, id, place };
+}
+
+async function status(path: string, cookie: string): Promise<number> {
+  return (await fetch(new URL(path, baseUrl), { headers: { cookie }, redirect: "manual" })).status;
+}
+
+describe("audience: a meetup reaches its circle or the host's friends, no one else", () => {
+  it("shows a circle's meetup to its members and to no one outside", async () => {
+    const hostP = await person();
+    const member = await person();
+    const outsider = await person();
+    const cid = await circle(hostP.cookie, `Hall ${tag()}`);
+    expect((await joinCircle(member.cookie, await inviteCode(hostP.cookie, cid))).status).toBe(303);
+    const { res, id, place } = await postTo(hostP.cookie, `circle:${cid}`);
+    expect(res.status).toBe(303);
+
+    // the member sees it in the list, on its page, and can join
+    expect(await get("/i/badminton", member.cookie)).toContain(place);
+    expect(await get(`/m/${id}`, member.cookie)).toContain(place);
+    expect((await post(`/m/${id}/join`, {}, member.cookie)).status).toBe(303);
+
+    // the outsider: not in the list, a 404 for the page, and can't join
+    expect(await get("/i/badminton", outsider.cookie)).not.toContain(place);
+    expect(await status(`/m/${id}`, outsider.cookie)).toBe(404);
+    expect((await post(`/m/${id}/join`, {}, outsider.cookie)).status).toBe(404);
+    expect((await post(`/m/${id}/edit`, meetupFields(), outsider.cookie)).status).toBe(404);
+  });
+
+  it("keeps its live updates from anyone who can't see it", async () => {
+    const hostP = await person();
+    const member = await person();
+    const outsider = await person();
+    const cid = await circle(hostP.cookie);
+    const code = await inviteCode(hostP.cookie, cid);
+    expect((await joinCircle(member.cookie, code)).status).toBe(303);
+    const { id } = await postTo(hostP.cookie, `circle:${cid}`, {}, "running");
+
+    // watching the meetup itself is refused outright
+    const peek = await listen(`m:${id}`, outsider.cookie);
+    expect(await peek.res.text()).toContain("retry:");
+
+    // watching the list: the member hears a join, the outsider hears nothing
+    const inside = await listen("i:running", member.cookie);
+    const outside = await listen("i:running", outsider.cookie);
+    const joiner = await person();
+    expect((await joinCircle(joiner.cookie, code)).status).toBe(303);
+    expect((await post(`/m/${id}/join`, {}, joiner.cookie)).status).toBe(303);
+    expect(await inside.next()).toContain("event: change");
+    expect(await outside.next(1200)).toBe(null);
+  });
+
+  it("shows a friends meetup to direct friends only, never friends of friends", async () => {
+    const hostP = await person();
+    const friend = await person();
+    const friendOfFriend = await person();
+    await befriend(hostP, friend, hostP.username);
+    await befriend(friend, friendOfFriend, friend.username);
+    const { id, place } = await postTo(hostP.cookie, "friends", {}, "coffee");
+
+    expect(await get(`/m/${id}`, friend.cookie)).toContain(place);
+    expect(await status(`/m/${id}`, friendOfFriend.cookie)).toBe(404);
+    expect(await get("/i/coffee", friendOfFriend.cookie)).not.toContain(place);
+  });
+
+  it("stops showing new meetups to someone who left the circle or lost the friendship", async () => {
+    const hostP = await person();
+    const was = await person();
+    const cid = await circle(hostP.cookie);
+    expect((await joinCircle(was.cookie, await inviteCode(hostP.cookie, cid))).status).toBe(303);
+    await befriend(hostP, was, hostP.username);
+
+    expect((await post(`/c/${cid}/leave`, {}, was.cookie)).status).toBe(303);
+    const wasId = await idOf(hostP.cookie, was.username);
+    expect((await post(`/friends/${wasId}/remove`, {}, hostP.cookie)).status).toBe(303);
+
+    const inCircle = await postTo(hostP.cookie, `circle:${cid}`);
+    const toFriends = await postTo(hostP.cookie, "friends");
+    expect(await status(`/m/${inCircle.id}`, was.cookie)).toBe(404);
+    expect(await status(`/m/${toFriends.id}`, was.cookie)).toBe(404);
+  });
+
+  it("keeps a meetup you already joined, even after you leave its circle", async () => {
+    const hostP = await person();
+    const guest = await person();
+    const cid = await circle(hostP.cookie);
+    expect((await joinCircle(guest.cookie, await inviteCode(hostP.cookie, cid))).status).toBe(303);
+    const { id, place } = await postTo(hostP.cookie, `circle:${cid}`);
+    expect((await post(`/m/${id}/join`, {}, guest.cookie)).status).toBe(303);
+
+    expect((await post(`/c/${cid}/leave`, {}, guest.cookie)).status).toBe(303);
+    expect(await get(`/m/${id}`, guest.cookie)).toContain(place);
+    expect(await get("/", guest.cookie)).toContain(place);
+  });
+
+  it("won't post to a circle you're not in, or to no one in particular", async () => {
+    const owner = await person();
+    const stranger = await person();
+    const cid = await circle(owner.cookie);
+    expect((await postTo(stranger.cookie, `circle:${cid}`)).res.status).toBe(400);
+    expect((await postTo(stranger.cookie, "everyone")).res.status).toBe(400);
+    expect((await postTo(stranger.cookie, "")).res.status).toBe(400);
+  });
+
+  it("doesn't offer to change who it's for once it's posted", async () => {
+    const hostP = await person();
+    const id = await host(hostP.cookie);
+    const edit = await get(`/m/${id}/edit`, hostP.cookie);
+    expect(edit).toContain("can't change after posting");
+    expect(edit).not.toContain('name="audience"');
   });
 });

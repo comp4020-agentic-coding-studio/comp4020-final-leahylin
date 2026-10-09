@@ -136,6 +136,12 @@ function changes(m: Meetup): string {
     : "";
 }
 
+// Where a meetup was shared: a circle's name, or the host's friends.
+export function audienceLabel(m: Meetup): string {
+  if (m.audience === "circle") return m.circle_name ?? "a circle";
+  return `${m.host_name}'s friends`;
+}
+
 export function meetupCard(
   m: Meetup,
   me: Person | null,
@@ -149,13 +155,14 @@ export function meetupCard(
     showInterest && interest
       ? `<span class="tag">${esc(interest.name)}</span> `
       : "";
+  const forWhom = `<span class="tag for">${esc(audienceLabel(m))}</span>`;
   return `
 <li class="meetup"${colour} id="m${m.id}">
   <a class="title" href="/m/${m.id}">${label}<span class="when">${esc(formatWhen(m.starts_at))}</span><span class="rel">${esc(relative(m.starts_at, now))}</span></a>
   ${changes(m)}
   ${where(m.place, m.meeting_point)}
   ${m.note ? `<p class="note">${esc(m.note)}</p>` : ""}
-  <p class="hint">hosted by ${esc(m.host_name)}</p>
+  <p class="hint">hosted by ${esc(m.host_name)} · ${forWhom}</p>
   <div class="row">${spots(m)}<span>${actions(m, me, going, now)}</span></div>
 </li>`;
 }
@@ -273,7 +280,33 @@ ${later}
   return `<div data-live="home">${body}</div>`;
 }
 
+export interface AudienceChoices {
+  circles: Circle[];
+  friends: number;
+}
+
+// "Who's it for?": one of your circles, or your friends. Required, no
+// default to the public because there is no public.
+function audienceField(choices: AudienceChoices, chosen: string | undefined): string {
+  const pick = chosen ?? (choices.circles[0] ? `circle:${choices.circles[0].id}` : "friends");
+  const option = (value: string, label: string) =>
+    `<option value="${esc(value)}"${value === pick ? " selected" : ""}>${esc(label)}</option>`;
+  const nobody =
+    choices.circles.length === 0 && choices.friends === 0
+      ? `<p class="hint warn">Right now nobody would see this: you're not in a circle and have no friends here yet. <a href="/circles">Circles</a> · <a href="/friends">Friends</a></p>`
+      : "";
+  return `
+    <label for="audience">Who's it for?</label>
+    <select id="audience" name="audience" required>
+      ${choices.circles.map((c) => option(`circle:${c.id}`, `${c.name} (circle, ${c.members})`)).join("")}
+      ${option("friends", choices.friends ? `My friends (${choices.friends})` : "My friends (none yet)")}
+    </select>
+    <p class="hint">Only they can see it or join. It can't be changed after you post.</p>
+    ${nobody}`;
+}
+
 export interface HostFormValues {
+  audience?: string;
   starts_at?: string;
   place?: string;
   meeting_point?: string;
@@ -287,7 +320,8 @@ export function hostForm(
   now: number,
   values: HostFormValues = {},
   error = "",
-  editing?: { id: number; going: number },
+  editing?: { id: number; going: number; audienceLabel: string },
+  choices?: AudienceChoices,
 ): string {
   const soonest = toSydneyInput(now + 15 * 60000);
   const latest = toSydneyInput(now + MAX_AHEAD_MS);
@@ -307,6 +341,13 @@ export function hostForm(
   <fieldset>
     <legend>${legend}</legend>
     ${error ? `<p class="error" role="alert">${esc(error)}</p>` : ""}
+    ${
+      editing
+        ? `<p class="hint">For <b>${esc(editing.audienceLabel)}</b>. Who it's for can't change after posting.</p>`
+        : choices
+          ? audienceField(choices, values.audience)
+          : ""
+    }
     <label for="starts_at">When</label>
     <input id="starts_at" name="starts_at" type="datetime-local" required min="${soonest}" max="${latest}" value="${esc(values.starts_at ?? "")}">
     <p class="hint">Within the next 7 days. Canberra time.</p>

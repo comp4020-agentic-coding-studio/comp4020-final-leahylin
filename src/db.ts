@@ -133,6 +133,10 @@ export interface Meetup {
   capacity_changed_at: number | null;
   note_changed_at: number | null;
   going: number;
+  // who it's for (decision 4): one circle, or the host's friends
+  audience: "circle" | "friends";
+  audience_circle_id: number | null;
+  circle_name: string | null;
 }
 
 // How long after its start a meetup still counts as "on" rather than finished.
@@ -275,22 +279,34 @@ export function renamePerson(id: number, name: string): void {
   q.renamePerson.run(name, id);
 }
 
+// Any meetup by id, whoever is asking. Only for code that has already
+// checked, or is about to check, canSee: never to answer a viewer directly.
 export function getMeetup(id: number): Meetup | null {
-  return (q.meetup.get(id) as Meetup | undefined) ?? null;
+  return (vq.anyMeetup.get({ id }) as Meetup | undefined) ?? null;
+}
+
+// The meetup if this person may see it, else null: to anyone outside its
+// audience a meetup doesn't exist.
+export function meetupFor(id: number, viewerId: number): Meetup | null {
+  return (vq.meetupFor.get({ id, v: viewerId }) as Meetup | undefined) ?? null;
+}
+
+export function canSee(meetupId: number, viewerId: number): boolean {
+  return vq.canSee.get({ id: meetupId, v: viewerId }) !== undefined;
 }
 
 // still on: hasn't started, or started less than RUNS_FOR_MS ago
-export function upcoming(interest: string, now: number): Meetup[] {
-  return q.upcoming.all(interest, now - RUNS_FOR_MS) as unknown as Meetup[];
+export function upcoming(interest: string, now: number, viewerId: number): Meetup[] {
+  return vq.upcoming.all({ interest, since: now - RUNS_FOR_MS, v: viewerId }) as unknown as Meetup[];
 }
 
-export function finished(interest: string, now: number): Meetup[] {
-  return q.finished.all(interest, now - RUNS_FOR_MS) as unknown as Meetup[];
+export function finished(interest: string, now: number, viewerId: number): Meetup[] {
+  return vq.finished.all({ interest, since: now - RUNS_FOR_MS, v: viewerId }) as unknown as Meetup[];
 }
 
-export function upcomingCounts(now: number): Record<string, number> {
+export function upcomingCounts(now: number, viewerId: number): Record<string, number> {
   const out: Record<string, number> = {};
-  for (const row of q.countUpcoming.all(now - RUNS_FOR_MS) as {
+  for (const row of vq.counts.all({ since: now - RUNS_FOR_MS, v: viewerId }) as {
     interest: string;
     n: number;
   }[]) {
@@ -302,7 +318,7 @@ export function upcomingCounts(now: number): Record<string, number> {
 export type MyMeetup = Meetup & { joined_at: number };
 
 export function myMeetups(personId: number, now: number): MyMeetup[] {
-  return q.mine.all(personId, now - RUNS_FOR_MS, now) as unknown as MyMeetup[];
+  return vq.mine.all({ v: personId, since: now - RUNS_FOR_MS, now }) as unknown as MyMeetup[];
 }
 
 export function attendees(meetupId: number): { id: number; name: string }[] {
@@ -314,6 +330,8 @@ export function isGoing(meetupId: number, personId: number): boolean {
 }
 
 export interface NewMeetup {
+  audience: "circle" | "friends";
+  circleId: number | null;
   interest: string;
   hostId: number;
   startsAt: number;
@@ -324,8 +342,12 @@ export interface NewMeetup {
 }
 
 // The host is the first person going, so they count toward the head count.
-export function createMeetup(m: NewMeetup): number {
+// Posting to a circle you're not in is refused here, inside the transaction,
+// not just in the form: null means "not yours to post to".
+export function createMeetup(m: NewMeetup): number | null {
   return tx(() => {
+    if (m.audience === "circle" && (m.circleId === null || !isCircleMember(m.circleId, m.hostId)))
+      return null;
     const now = Date.now();
     const { id } = q.insertMeetup.get(
       m.interest,
@@ -339,6 +361,7 @@ export function createMeetup(m: NewMeetup): number {
     ) as {
       id: number;
     };
+    vq.setAudience.run({ id, audience: m.audience, circle: m.audience === "circle" ? m.circleId : null });
     q.insertJoin.run(id, m.hostId, tick(now));
     return id;
   });
@@ -354,7 +377,8 @@ export function join(
   now: number,
 ): JoinResult {
   return tx(() => {
-    const m = getMeetup(meetupId);
+    // outside the audience, the meetup doesn't exist
+    const m = meetupFor(meetupId, personId);
     if (!m) return "missing";
     if (m.cancelled_at !== null || m.starts_at <= now) return "closed";
     if (isGoing(meetupId, personId)) return "already";
@@ -698,3 +722,45 @@ export function cancelFriendRequest(personId: number, toId: number): void {
 export function removeFriend(personId: number, otherId: number): void {
   fq.deleteFriendship.run(...pair(personId, otherId));
 }
+
+
+// ---- Who can see a meetup (decision 4, step 4) ----
+// One rule, written once and used by every query that shows a meetup to
+// someone. You can see a meetup if you host it, have already joined it (so a
+// promise to turn up isn't stranded if you later leave the circle or lose the
+// friendship), or are in its audience right now: a member of its circle, or a
+// direct friend of its host. Friends of friends never.
+addColumn("meetups", "audience", "TEXT NOT NULL DEFAULT 'friends'");
+addColumn("meetups", "audience_circle_id", "INTEGER");
+
+const VISIBLE = `(
+  m.host_id = $v
+  OR EXISTS (SELECT 1 FROM joins jv WHERE jv.meetup_id = m.id AND jv.person_id = $v)
+  OR (m.audience = 'circle' AND EXISTS (
+        SELECT 1 FROM circle_members cv WHERE cv.circle_id = m.audience_circle_id AND cv.person_id = $v))
+  OR (m.audience = 'friends' AND EXISTS (
+        SELECT 1 FROM friendships fv WHERE fv.a_id = MIN(m.host_id, $v) AND fv.b_id = MAX(m.host_id, $v)))
+)`;
+
+const visibleCols = `${meetupCols}, m.audience, m.audience_circle_id, cn.name AS circle_name`;
+const FROM = `FROM meetups m JOIN people h ON h.id = m.host_id LEFT JOIN circles cn ON cn.id = m.audience_circle_id`;
+
+const vq = {
+  anyMeetup: db.prepare(`SELECT ${visibleCols} ${FROM} WHERE m.id = $id`),
+  meetupFor: db.prepare(`SELECT ${visibleCols} ${FROM} WHERE m.id = $id AND ${VISIBLE}`),
+  canSee: db.prepare(`SELECT 1 FROM meetups m WHERE m.id = $id AND ${VISIBLE}`),
+  upcoming: db.prepare(`SELECT ${visibleCols} ${FROM}
+    WHERE m.interest = $interest AND m.cancelled_at IS NULL AND m.starts_at > $since AND ${VISIBLE}
+    ORDER BY m.starts_at`),
+  finished: db.prepare(`SELECT ${visibleCols} ${FROM}
+    WHERE m.interest = $interest AND m.cancelled_at IS NULL AND m.starts_at <= $since AND ${VISIBLE}
+    ORDER BY m.starts_at DESC LIMIT 20`),
+  counts: db.prepare(`SELECT m.interest, COUNT(*) AS n FROM meetups m
+    WHERE m.cancelled_at IS NULL AND m.starts_at > $since AND ${VISIBLE} GROUP BY m.interest`),
+  // what you're going to: still on, plus called-off ones until their start
+  // time passes, so you hear about it instead of turning up
+  mine: db.prepare(`SELECT ${visibleCols}, me.joined_at AS joined_at ${FROM}
+    JOIN joins me ON me.meetup_id = m.id AND me.person_id = $v
+    WHERE m.starts_at > $since AND (m.cancelled_at IS NULL OR m.starts_at > $now) ORDER BY m.starts_at`),
+  setAudience: db.prepare("UPDATE meetups SET audience = $audience, audience_circle_id = $circle WHERE id = $id"),
+};

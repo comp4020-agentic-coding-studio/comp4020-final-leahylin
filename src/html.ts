@@ -55,6 +55,9 @@ button.link:focus-visible{outline:2px solid var(--link);outline-offset:2px}
 .later>span:first-child{flex:1}
 .row-actions{display:flex;gap:8px;flex-wrap:wrap}
 .count{color:var(--link);font-weight:700}
+select{appearance:auto}
+.tag.for{background:var(--soft);color:var(--ink);font-weight:500}
+.hint.warn{color:#8A1F11}
 .auth-actions{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}
 button,.button{font:inherit;font-weight:700;border:0;border-radius:999px;min-height:44px;padding:0 20px;background:var(--c,var(--accent));color:#FFFFFF;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
 button.quiet,a.button.quiet{background:transparent;color:var(--muted);border:1px solid #D8CDBE;font-weight:500;padding:0 16px}

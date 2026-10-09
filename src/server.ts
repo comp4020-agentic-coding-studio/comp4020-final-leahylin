@@ -101,6 +101,17 @@ function touched(m: { id: number; interest: string }): string[] {
   return [`m:${m.id}`, `i:${m.interest}`];
 }
 
+// Tell the pages watching a meetup that it changed, but only the people who
+// can see it (decision 4).
+function announce(m: { id: number; interest: string }): void {
+  events.publish(touched(m), (pid) => pid !== null && db.canSee(m.id, pid));
+}
+
+// What the host form offers under "Who's it for?"
+function audienceChoices(personId: number): views.AudienceChoices {
+  return { circles: db.myCircles(personId), friends: db.friendsOf(personId).length };
+}
+
 function readmeHtml(): string {
   const md = readFileSync(new URL("../README.md", import.meta.url), "utf8");
   return `<article class="readme">${marked.parse(md, { async: false })}</article>`;
@@ -123,6 +134,10 @@ async function handle(
   // than useless here.
   if (method === "GET" && path === "/events") {
     const topics = events.parseTopics(url.searchParams.get("topics"));
+    // no watching a meetup you can't see
+    if (me)
+      for (const t of [...topics])
+        if (t.startsWith("m:") && !db.canSee(Number(t.slice(2)), me.id)) topics.delete(t);
     if (
       topics.size === 0 ||
       !me ||
@@ -144,7 +159,7 @@ async function handle(
         topics: me
           ? [...INTERESTS.map((i) => `i:${i.slug}`), ...mine.map((m) => `m:${m.id}`)]
           : undefined,
-        body: views.home(me, db.upcomingCounts(now), mine, db.attendees, now),
+        body: views.home(me, me ? db.upcomingCounts(now, me.id) : {}, mine, db.attendees, now),
       }),
     );
   }
@@ -353,7 +368,7 @@ async function handle(
   if ((m = /^\/i\/([a-z]+)$/.exec(path)) && method === "GET") {
     const interest = findInterest(m[1]);
     if (!interest) return notFound(res, who);
-    const list = db.upcoming(interest.slug, now);
+    const list = db.upcoming(interest.slug, now, me.id);
     const going = new Set(
       me ? list.filter((x) => db.isGoing(x.id, me.id)).map((x) => x.id) : [],
     );
@@ -362,9 +377,9 @@ async function handle(
       me,
       list,
       going,
-      db.finished(interest.slug, now),
+      db.finished(interest.slug, now, me.id),
       now,
-      views.hostForm(interest, now),
+      views.hostForm(interest, now, {}, "", undefined, audienceChoices(me.id)),
     );
     return send(
       res,
@@ -383,12 +398,22 @@ async function handle(
     const interest = findInterest(m[1]);
     if (!interest) return notFound(res, who);
     if (!me) return redirect(res, `/i/${interest.slug}`);
-    const { values, startsAt, capacity, error } = readMeetupForm(
-      await form(req),
-      now,
-    );
+    const f = await form(req);
+    const { values, startsAt, capacity, error: formError } = readMeetupForm(f, now);
+    // who it's for: "friends", or "circle:<id>" for a circle you're in
+    const aud = f.get("audience") ?? "";
+    const circleId = /^circle:(\d+)$/.exec(aud)?.[1];
+    const audience = aud === "friends" ? "friends" : circleId ? "circle" : null;
+    const choices = audienceChoices(me.id);
+    const error =
+      formError ||
+      (audience === null ? "Say who it's for: one of your circles, or your friends." : "") ||
+      (audience === "circle" && !choices.circles.some((c) => c.id === Number(circleId))
+        ? "You can only post to a circle you're in."
+        : "");
+    const valuesWithAudience = { ...values, audience: aud };
     if (error) {
-      const list = db.upcoming(interest.slug, now);
+      const list = db.upcoming(interest.slug, now, me.id);
       const going = new Set(
         list.filter((x) => db.isGoing(x.id, me.id)).map((x) => x.id),
       );
@@ -397,9 +422,9 @@ async function handle(
         me,
         list,
         going,
-        db.finished(interest.slug, now),
+        db.finished(interest.slug, now, me.id),
         now,
-        views.hostForm(interest, now, values, error),
+        views.hostForm(interest, now, valuesWithAudience, error, undefined, choices),
       );
       return send(
         res,
@@ -413,6 +438,8 @@ async function handle(
       );
     }
     const id = db.createMeetup({
+      audience: audience!,
+      circleId: audience === "circle" ? Number(circleId) : null,
       interest: interest.slug,
       hostId: me.id,
       startsAt,
@@ -421,13 +448,15 @@ async function handle(
       capacity,
       note: values.note,
     });
-    // nobody is watching m:<id> yet — it didn't exist a moment ago
-    events.publish([`i:${interest.slug}`]);
+    if (id === null) return redirect(res, `/i/${interest.slug}`);
+    // nobody is watching m:<id> yet — it didn't exist a moment ago; and only
+    // its audience hears that the list moved
+    events.publish([`i:${interest.slug}`], (pid) => pid !== null && db.canSee(id, pid));
     return redirect(res, `/i/${interest.slug}#m${id}`);
   }
 
   if ((m = /^\/m\/(\d+)$/.exec(path)) && method === "GET") {
-    const meetup = db.getMeetup(Number(m[1]));
+    const meetup = db.meetupFor(Number(m[1]), me.id);
     if (!meetup) return notFound(res, who);
     const interest = findInterest(meetup.interest)!;
     const going = me ? db.isGoing(meetup.id, me.id) : false;
@@ -457,7 +486,7 @@ async function handle(
     (m = /^\/m\/(\d+)\/edit$/.exec(path)) &&
     (method === "GET" || method === "POST")
   ) {
-    const meetup = db.getMeetup(Number(m[1]));
+    const meetup = db.meetupFor(Number(m[1]), me.id);
     if (!meetup) return notFound(res, who);
     if (!me) return redirect(res, `/m/${meetup.id}`);
     const interest = findInterest(meetup.interest)!;
@@ -492,7 +521,7 @@ async function handle(
         }),
       );
     }
-    const editing = { id: meetup.id, going: meetup.going };
+    const editing = { id: meetup.id, going: meetup.going, audienceLabel: views.audienceLabel(meetup) };
     const show = (status: number, values: views.HostFormValues, error = "") =>
       send(
         res,
@@ -541,7 +570,7 @@ async function handle(
         `${going} people are already going, so the head count can't go below ${going}.`,
       );
     }
-    if (result === "saved") events.publish(touched(meetup));
+    if (result === "saved") announce(meetup);
     return redirect(res, back);
   }
 
@@ -549,7 +578,7 @@ async function handle(
     (m = /^\/m\/(\d+)\/(join|leave|cancel)$/.exec(path)) &&
     method === "POST"
   ) {
-    const meetup = db.getMeetup(Number(m[1]));
+    const meetup = db.meetupFor(Number(m[1]), me.id);
     if (!meetup) return notFound(res, who);
     if (!me) return redirect(res, `/m/${meetup.id}`);
     const back = `/i/${meetup.interest}#m${meetup.id}`;
@@ -588,7 +617,7 @@ async function handle(
         );
       }
       // "already" means they were going before they asked; nothing moved
-      if (result === "joined") events.publish(touched(meetup));
+      if (result === "joined") announce(meetup);
       return redirect(res, back);
     }
 
@@ -609,7 +638,7 @@ async function handle(
     }
     if (action === "leave") {
       if (meetup.starts_at > now && db.leave(meetup.id, me.id))
-        events.publish(touched(meetup));
+        announce(meetup);
       return redirect(res, back);
     }
     if (meetup.host_id !== me.id) {
@@ -627,7 +656,7 @@ async function handle(
         }),
       );
     }
-    if (db.cancel(meetup.id, now)) events.publish(touched(meetup));
+    if (db.cancel(meetup.id, now)) announce(meetup);
     return redirect(res, back);
   }
 
