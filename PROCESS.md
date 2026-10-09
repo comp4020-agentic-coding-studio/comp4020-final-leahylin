@@ -56,4 +56,6 @@ The full decision and trade-offs are in
 ## Next
 
 Crit 9 will add real-time updates, meeting-point details, an in-meetup notice
-board, and check-in. 
+board, and check-in. Each of those was broad enough to sprawl, so before any
+crit 9 code I narrowed each one to a concrete shape and a boundary — recorded
+in [docs/decisions/0002-crit9-scope.md](docs/decisions/0002-crit9-scope.md).
