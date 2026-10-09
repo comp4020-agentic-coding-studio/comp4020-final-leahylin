@@ -2,84 +2,88 @@
 
 Find someone to do the thing with, today.
 
-An activity buddy is someone you share one activity with, not a friend you
-have to keep up. Pick running, badminton or coffee, then join a meetup or
-start one: *Tuesday 6pm, Black Mountain, 4 people, easy pace*.
+An activity buddy is someone you know who's up for the same thing. No
+planning, no pressure: just one run, one game, one coffee. Pick running,
+badminton or coffee, then join or start a meetup for your
+circle or friends: *Tuesday 6pm, Black Mountain, 4 people, easy pace*.
 
 ## What good means here
 
-A good buddy app shortens the gap between *I'd like a running buddy* and
-*I'm at the start line*. What counts is meetups that happen, not sign-ups.
-Four commitments:
+A good buddy app shortens the gap between *I'd like a running buddy* and *I'm
+at the start line*, with people you're glad to see. Meetups that happen count,
+not sign-ups. Five commitments:
 
-1. **Every meetup is concrete:** an activity, a time, a place and a head
-   count. "Coffee sometime?" can't be posted, because it never happens.
-2. **Everything is near:** within the next seven days, on or around the ANU
-   campus.
-3. **Joining is one action, and so is leaving.** No approval. Easy leaving
-   means people back out instead of not turning up; the spot goes back and
-   nothing records it.
-4. **The head count is real.** Four never becomes five: badminton is doubles.
+1. **Concrete:** an activity, time, place and head count. "Coffee sometime?"
+   never happens.
+2. **Near:** within seven days, on or around the ANU campus.
+3. **One action to join or leave.** No approval. Easy leaving means people
+   back out instead of not turning up; nothing records it.
+4. **A real head count.** Four never becomes five: badminton is doubles.
+5. **Only people you know.** A meetup goes to one circle (at most 25, joined
+   by invite) or the host's friends. Never public, never friends of friends.
 
 ## Who it's for
 
-ANU students who want company for something they'd do anyway: people new to
-Canberra, whose friends don't run, or who'd rather not post "anyone?" in a
-500-person group chat. Also the showcase room, full of possible buddies.
+ANU students who know people but rarely make plans with them: classmates,
+hallmates, club members. It's for groups of up to 25 who already trust each
+other. Also the showcase room, joined as one circle via an invite code on
+screen.
 
 ## What I chose not to build
 
-- **Accounts.** A nickname your browser remembers; a light connection needs
-  a light way in.
-- **Direct messages.** The point is to meet. Group notes come in crit 9.
-- **Profiles, followers, likes, ratings.** Rating a coffee turns it into an
-  audition.
-- **Search, maps, recommendations.** One campus; a list by time is enough.
-- **Friend lists or "people you ran with".** They push toward being a social
-  network.
+- **Public meetups or friends of friends:** how strangers come back.
+- **Email or password reset:** a lost password means a new account.
+- **Direct messages:** the point is to meet; group notes come in crit 9.
+- **Profiles, followers, likes, ratings:** no auditions.
+- **Search, maps, recommendations:** one campus; a list by time is enough.
+- **Public friend lists or counts:** your friends are visible only to you.
+
+Crit 8 also excluded accounts and friend lists. A pod member noted that
+meeting a stranger alone at a car park is a real risk, so I reversed both
+([decision 4](docs/decisions/0004-accounts-circles-friends.md)).
 
 ## What persists and what doesn't
 
-- **Your nickname** stays in your browser for a year.
-- **Meetups and who joined** are kept. Finished ones move into a short log
-  under each interest: *3 Oct · Black Mountain · 4 went*.
-- **Leaving** removes you completely. There's no "left" or "flaked" history.
+- **Accounts, circles and friends** stay until you leave or remove them.
+- **Meetups and who joined** stay; finished ones join a short log per
+  interest: *3 Oct · Black Mountain · 4 went*.
+- **Leaving** removes you completely: no "left" or "flaked" history.
 
 ## How good is checked
 
-These are tested in `spec/`, against the running app:
+Tested in `spec/` against the running app:
 
-- a meetup without a time, place or head count is refused
-- a meetup in the past or more than seven days ahead is refused
-- joining and leaving each take one request, and leaving frees the spot
-- a full meetup refuses one more person, even with simultaneous requests
-- an edited meetup says exactly what changed (time, place, head count, note),
-  and nothing else
-- a meetup and its people are still there on a fresh visit
-- a change reaches a page that's already open, without a reload
-- every page still works with its script switched off
+- outsiders to a meetup's circle, or non-friends of its host, can't see or
+  join it, or get its live updates
+- a circle refuses a 26th member
+- passwords are never stored as typed
+- a meetup missing time, place or head count, in the past, or over seven days
+  ahead is refused
+- join and leave each take one request; leaving frees the spot
+- a full meetup refuses one more, even with simultaneous requests
+- an edit says exactly what changed (time, place, head count, note), nothing
+  else
+- meetups survive a fresh visit; changes reach open pages without a reload;
+  every page works with script off
 
-These can only be judged:
+Only judged:
 
-- *Is joining quick?* I'll time people in my pod.
-- *Does it feel light?* The crit will tell me.
-- *Do meetups happen?* Crit 9's check-in will make it countable.
+- *Is joining quick?* I'll time my pod.
+- *Does it feel light?* The crit will say.
+- *Do meetups happen?* Crit 9's check-in makes it countable.
 
 ## What I read and looked at
 
 - Robin Sloan, [*An app can be a home-cooked meal*](https://www.robinsloan.com/notes/home-cooked-app/)
-  (2020). Software for a few specific people can be good by standards that
-  make no sense for a product.
+  (2020): software for a few people has its own standards of good.
 - Clay Shirky, [*Situated Software*](https://gwern.net/doc/technology/2004-03-30-shirky-situatedsoftware.html)
-  (2004). Software for one group in one place can lean on its context: here,
-  the campus.
-- Darius Kazemi, [*Run your own social*](https://runyourown.social/) (2019).
-  A small, limited social space is a choice, not a failure to scale.
-- Meetup, Strava clubs and rednote "buddy" posts: the median answers
-  (weeks ahead, stats, the whole internet). I wanted near, numberless, local.
+  (2004): software for one group can lean on its context, here the campus.
+- Darius Kazemi, [*Run your own social*](https://runyourown.social/) (2019):
+  a small, limited social space is a choice, not a failure to scale.
+- Meetup, Strava clubs, rednote "buddy" posts: the median answers. I wanted
+  near, numberless, local.
 
 ## Status
 
-Crit 8: start, join, leave or edit a meetup; it's still there when you come
-back. Crit 9 so far: a meeting point separate from the general place, and
-pages that keep up as things change. Next: a notice board, check-in.
+Built: meetups, meeting points, live pages. Next: accounts, circles,
+friends, a notice board, check-in.

@@ -53,6 +53,42 @@ The full decision and trade-offs are in
 [docs/decisions/0001-stack.md](docs/decisions/0001-stack.md)
 ([`d5a90d2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/d5a90d2)).
 
+## Crit 8 feedback: from strangers to people you know
+
+*Draft. This will be rewritten once the code is built.*
+
+At crit 8, a pod member pointed out a safety problem: anyone could see a
+meetup's time and place and turn up, so you might end up alone at a car park
+with a complete stranger. My crit 8 README had ruled out accounts and friend
+lists ("a light connection needs a light way in"). That argument doesn't hold
+up once the risk is who turns up, because a nickname tells you nothing about
+them.
+
+So I changed the idea. Meetups are now only for people you know: either a
+**circle** you joined by invite (a class, a hall floor, a club) or your
+**direct friends**. Before any code, I worked through the design with the
+agent. It laid out the options (friends only, circles only, both) with their
+trade-offs, and I made the calls:
+
+- **both circles and friends.** Circles cover groups, friends cover two
+  specific people
+- **friends of friends can't see "my friends" meetups**, because that brings
+  strangers back
+- **a circle holds at most 25 people.** Beyond that, members stop knowing
+  each other
+- **the crit 8 data is cleared**, since nicknames without passwords have
+  nothing to migrate into
+
+Following my own harness, the README changed first: a new fifth commitment,
+"you only meet people you know", and accounts and friend lists came off "What
+I chose not to build". Then CLAUDE.md: the "never add accounts" rule became
+rules about audiences, circle size, password storage and private friend
+lists. The reasoning and rejected alternatives are in
+[docs/decisions/0004-accounts-circles-friends.md](docs/decisions/0004-accounts-circles-friends.md).
+One small correction along the way: the agent first numbered this record
+0003 without checking the folder, which already held 0003. I caught it, and
+it was renumbered.
+
 ## Next
 
 Crit 9 will add real-time updates, meeting-point details, an in-meetup notice

@@ -14,13 +14,23 @@ around a rule; argue for changing the README first.
   ahead is refused on the server, whatever the form allows.
 - **Never record that someone left.** Leaving deletes the join row. No
   "flaked", "left" or "no-show" state, counts or history.
-- **Never add accounts, passwords, emails, DMs, profiles, followers, likes,
-  ratings, or a ranking of people.** README "What I chose not to build" says
-  why. Proposing one is fine; building one without the README changing first
-  is not.
-- **Never trust the client for identity.** Who you are is the `buddyup` cookie's
-  random token, looked up server-side. Names in form fields are never used to
-  decide who did something.
+- **Never show a meetup to anyone outside its audience.** A meetup's audience
+  is one circle or the host's direct friends, never the public and never
+  friends of friends. The server checks it on every read and every write, and
+  the live-update stream only signals topics the viewer can see
+  ([decision 4](docs/decisions/0004-accounts-circles-friends.md)).
+- **Never let a circle go over 25 members.** Joining checks the count inside
+  the same transaction as the insert, like the head count.
+- **Never store a password as typed.** Hash it with `scrypt` and a per-user
+  salt, compare in constant time, and never log it or echo it back.
+- **Never make friend lists public.** No one sees another person's friends or
+  a count of them.
+- **Never add emails, DMs, public profiles, followers, likes, ratings, or a
+  ranking of people.** README "What I chose not to build" says why. Proposing
+  one is fine; building one without the README changing first is not.
+- **Never trust the client for identity.** Who you are is the session cookie's
+  random token, looked up server-side. Usernames or names in form fields are
+  never used to decide who did something.
 - **Never render user text unescaped.** Every nickname, place and note goes
   through `esc()` in `src/html.ts`.
 
