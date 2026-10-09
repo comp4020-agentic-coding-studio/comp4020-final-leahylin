@@ -23,3 +23,6 @@ mise.local.toml
 
 # local SQLite when running outside Docker
 data/
+
+# screenshots and files the Claude app saves into this folder
+Claude outputs/

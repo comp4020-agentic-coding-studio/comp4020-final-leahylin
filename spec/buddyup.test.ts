@@ -1147,3 +1147,14 @@ describe("quick notes: one tap for the moment of meeting up", () => {
     expect((await post(`/m/${id}/notes`, { quick: "Come to my party" }, here.cookie)).status).toBe(400);
   });
 });
+
+describe("signed out, the header offers only what's there", () => {
+  it("shows About and Log in, not links that only lead to the login page", async () => {
+    const html = await (await fetch(new URL("/", baseUrl))).text();
+    const nav = /<nav class="nav"[^>]*>([\s\S]*?)<\/nav>/.exec(html)?.[1] ?? "";
+    expect(nav).toContain('href="/readme/"');
+    expect(nav).not.toContain('href="/i/');
+    expect(nav).not.toContain('href="/circles"');
+    expect(await get("/")).toContain('href="/circles"');
+  });
+});

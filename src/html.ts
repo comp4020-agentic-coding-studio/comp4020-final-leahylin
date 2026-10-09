@@ -305,6 +305,11 @@ export function page(opts: {
   topics?: string[];
 }): string {
   const requests = opts.who?.requests ?? 0;
+  // Signed out there is nothing behind these links but the login page, so
+  // only "About" is offered.
+  const nav = opts.who
+    ? `${INTERESTS.map((i) => `<a href="/i/${i.slug}">${esc(i.name)}</a>`).join("")}<a href="/circles">Circles</a><a href="/friends">${requests ? `Friends <span class="count">(${requests})</span>` : "Friends"}</a>`
+    : "";
   const who = opts.who
     ? `<span class="who">${opts.topics?.length ? `<span class="live-dot" title="Live"></span>` : ""}Hey <b>${esc(opts.who.name)}</b> · <a href="/me">change</a> · <form class="inline" method="post" action="/logout"><button class="link">Log out</button></form></span>`
     : `<span class="who"><a href="/login">Log in</a></span>`;
@@ -328,7 +333,7 @@ export function page(opts: {
 <style>${CSS}</style>
 </head>
 <body${style}${live}>
-<header class="site"><div class="bar"><a class="brand" href="/">Buddy Up</a><nav class="nav" aria-label="Interests">${INTERESTS.map((i) => `<a href="/i/${i.slug}">${esc(i.name)}</a>`).join("")}<a href="/circles">Circles</a><a href="/friends">${requests ? `Friends <span class="count">(${requests})</span>` : "Friends"}</a><a href="/readme/">About</a></nav>${who}</div></header>
+<header class="site"><div class="bar"><a class="brand" href="/">Buddy Up</a><nav class="nav" aria-label="Main">${nav}<a href="/readme/">About</a></nav>${who}</div></header>
 <main class="wrap">
 ${opts.body}
 </main>
