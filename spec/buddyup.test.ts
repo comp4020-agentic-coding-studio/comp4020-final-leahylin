@@ -966,3 +966,184 @@ describe("audience: a meetup reaches its circle or the host's friends, no one el
     expect(edit).not.toContain('name="audience"');
   });
 });
+
+// ---- Notes and check-in (ADR 0002) ----
+
+// a meetup in a circle of the host's, with `goers` joined and `watchers`
+// in the circle but not going
+async function gathering(goers: number, watchers: number, overrides: Record<string, string> = {}) {
+  const hostP = await person();
+  const cid = await circle(hostP.cookie);
+  const code = await inviteCode(hostP.cookie, cid);
+  const going = await Promise.all(Array.from({ length: goers }, () => person()));
+  const looking = await Promise.all(Array.from({ length: watchers }, () => person()));
+  for (const p of [...going, ...looking]) expect((await joinCircle(p.cookie, code)).status).toBe(303);
+  const { id } = await postTo(hostP.cookie, `circle:${cid}`, overrides, "running");
+  for (const p of going) expect((await post(`/m/${id}/join`, {}, p.cookie)).status).toBe(303);
+  return { hostP, id, going, looking, cid };
+}
+
+describe("notes: a notice board for the people going, only while it's on", () => {
+  it("is read and written by people going, and only them", async () => {
+    const { hostP, id, going, looking } = await gathering(1, 1);
+    const [goer] = going;
+    const [watcher] = looking;
+    const note = `running 5 late ${tag()}`;
+    expect((await post(`/m/${id}/notes`, { body: note }, goer.cookie)).status).toBe(303);
+
+    expect(await get(`/m/${id}`, hostP.cookie)).toContain(note);
+    expect(await get(`/m/${id}`, goer.cookie)).toContain(note);
+    // can see the meetup, isn't going: no notes, and can't post one
+    const theirs = await get(`/m/${id}`, watcher.cookie);
+    expect(theirs).not.toContain(note);
+    expect(theirs).toContain("Join to see what the group is saying");
+    expect((await post(`/m/${id}/notes`, { body: "hi" }, watcher.cookie)).status).toBe(403);
+  });
+
+  it("cuts you off when you leave, and escapes what's written", async () => {
+    const { id, going } = await gathering(2, 0);
+    const [stays, leaves] = going;
+    const mark = `mark${tag()}`;
+    const note = `<img src=x onerror=alert(1)> ${mark}`;
+    expect((await post(`/m/${id}/notes`, { body: note }, stays.cookie)).status).toBe(303);
+    const html = await get(`/m/${id}`, leaves.cookie);
+    expect(html).not.toContain("<img src=x");
+    expect(html).toContain("&lt;img src=x");
+
+    expect((await post(`/m/${id}/leave`, {}, leaves.cookie)).status).toBe(303);
+    // (the page's own live-update script says "onerror", so look for the note's mark)
+    expect(await get(`/m/${id}`, leaves.cookie)).not.toContain(mark);
+  });
+
+  it("lets the author or the host delete a note, and nobody else", async () => {
+    const { hostP, id, going } = await gathering(2, 0);
+    const [author, other] = going;
+    const note = `wrong park ${tag()}`;
+    expect((await post(`/m/${id}/notes`, { body: note }, author.cookie)).status).toBe(303);
+    const noteId = /\/notes\/(\d+)\/delete/.exec(await get(`/m/${id}`, author.cookie))?.[1];
+    expect(noteId).toBeTruthy();
+    // the other goer sees no delete button and can't delete it
+    expect(await get(`/m/${id}`, other.cookie)).not.toContain(`/notes/${noteId}/delete`);
+    expect((await post(`/m/${id}/notes/${noteId}/delete`, {}, other.cookie)).status).toBe(404);
+    expect((await post(`/m/${id}/notes/${noteId}/delete`, {}, hostP.cookie)).status).toBe(303);
+    expect(await get(`/m/${id}`, author.cookie)).not.toContain(note);
+  });
+
+  it("tells people going about a new note, and nobody else", async () => {
+    const { id, going, looking } = await gathering(2, 1);
+    const [writer, reader] = going;
+    const inside = await listen(`m:${id}`, reader.cookie);
+    const outside = await listen(`m:${id}`, looking[0].cookie);
+    expect((await post(`/m/${id}/notes`, { body: "on my way" }, writer.cookie)).status).toBe(303);
+    expect(await inside.next()).toContain("event: change");
+    expect(await outside.next(1200)).toBe(null);
+  });
+});
+
+describe("check-in: self-reported, shown only as a count", () => {
+  it("isn't open before the start", async () => {
+    const { id, going } = await gathering(1, 0);
+    const res = await post(`/m/${id}/checkin`, { came: "1" }, going[0].cookie);
+    expect(res.status).toBe(409);
+    expect(await get(`/m/${id}`, going[0].cookie)).not.toContain("checked in");
+  });
+
+  // The form only takes whole minutes, so this waits for the next minute to
+  // start: up to a minute of real time.
+  it("opens at the start for people going, and only ever shows a number", { timeout: 90_000 }, async () => {
+    const startsAt = Math.ceil((Date.now() + 2000) / 60000) * 60000;
+    const { hostP, id, going, looking } = await gathering(1, 1, { starts_at: toSydneyInput(startsAt) });
+    const [goer] = going;
+    await new Promise((r) => setTimeout(r, startsAt - Date.now() + 500));
+
+    expect((await post(`/m/${id}/checkin`, { came: "1" }, goer.cookie)).status).toBe(303);
+    expect((await post(`/m/${id}/checkin`, { came: "1" }, looking[0].cookie)).status).toBe(403);
+
+    const html = await get(`/m/${id}`, hostP.cookie);
+    const section = /<section class="checkin">([\s\S]*?)<\/section>/.exec(html)?.[1] ?? "";
+    expect(section).toContain("1 of 2");
+    // a count, never who
+    expect(section).not.toContain(goer.name);
+    expect(section).not.toContain(hostP.name);
+
+    // and it can be taken back
+    expect((await post(`/m/${id}/checkin`, { came: "0" }, goer.cookie)).status).toBe(303);
+    expect(await get(`/m/${id}`, goer.cookie)).toContain("0 of 2");
+  });
+});
+
+describe("replies: answer a note with words or a quick emoji, never a count", () => {
+  async function noteId(cookie: string, meetupId: number, text: string): Promise<string> {
+    const html = await get(`/m/${meetupId}`, cookie);
+    const at = html.indexOf(text);
+    expect(at).toBeGreaterThan(-1);
+    return /name="reply_to" value="(\d+)"/.exec(html.slice(at))![1];
+  }
+
+  it("lets people going reply in words or with a quick emoji, shown by name", async () => {
+    const { id, going, looking } = await gathering(2, 1);
+    const [a, b] = going;
+    const note = `rain plan? ${tag()}`;
+    expect((await post(`/m/${id}/notes`, { body: note }, a.cookie)).status).toBe(303);
+    const nid = await noteId(a.cookie, id, note);
+
+    const words = `indoors then 🏸 ${tag()}`;
+    expect((await post(`/m/${id}/notes`, { body: words, reply_to: nid }, b.cookie)).status).toBe(303);
+    expect((await post(`/m/${id}/notes`, { quick: "💪", reply_to: nid }, a.cookie)).status).toBe(303);
+    const html = await get(`/m/${id}`, b.cookie);
+    expect(html).toContain(words);
+    expect(html).toContain(`<b>${a.name}</b> <span class="reply-body">💪</span>`);
+
+    // not going: can't see them, can't reply
+    expect(await get(`/m/${id}`, looking[0].cookie)).not.toContain(words);
+    expect((await post(`/m/${id}/notes`, { quick: "💪", reply_to: nid }, looking[0].cookie)).status).toBe(403);
+  });
+
+  it("never adds quick replies up into a count", async () => {
+    const { id, going } = await gathering(3, 0);
+    const note = `see you there ${tag()}`;
+    expect((await post(`/m/${id}/notes`, { body: note }, going[0].cookie)).status).toBe(303);
+    const nid = await noteId(going[0].cookie, id, note);
+    for (const p of going) expect((await post(`/m/${id}/notes`, { quick: "❤️", reply_to: nid }, p.cookie)).status).toBe(303);
+    const html = await get(`/m/${id}`, going[0].cookie);
+    for (const p of going) expect(html).toContain(`<b>${p.name}</b> <span class="reply-body">❤️</span>`);
+    expect(html).not.toMatch(/❤️\s*(×|x)?\s*\d/);
+  });
+
+  it("only offers the listed quick replies, and no replies to replies", async () => {
+    const { id, going } = await gathering(1, 0);
+    const note = `meet at gate ${tag()}`;
+    expect((await post(`/m/${id}/notes`, { body: note }, going[0].cookie)).status).toBe(303);
+    const nid = await noteId(going[0].cookie, id, note);
+    expect((await post(`/m/${id}/notes`, { quick: "<b>x</b>", reply_to: nid }, going[0].cookie)).status).toBe(400);
+    const reply = `ok ${tag()}`;
+    expect((await post(`/m/${id}/notes`, { body: reply, reply_to: nid }, going[0].cookie)).status).toBe(303);
+    const html = await get(`/m/${id}`, going[0].cookie);
+    // the reply's own id: the highest note id on the page
+    const ids = [...html.matchAll(/\/notes\/(\d+)\/delete/g)].map((x) => Number(x[1]));
+    const newest = String(Math.max(...ids));
+    expect(newest).not.toBe(nid);
+    expect((await post(`/m/${id}/notes`, { body: "deeper", reply_to: newest }, going[0].cookie)).status).toBe(400);
+  });
+
+  it("takes a note's replies with it when the note is deleted", async () => {
+    const { id, going } = await gathering(2, 0);
+    const note = `old plan ${tag()}`;
+    expect((await post(`/m/${id}/notes`, { body: note }, going[0].cookie)).status).toBe(303);
+    const nid = await noteId(going[0].cookie, id, note);
+    const reply = `sounds good ${tag()}`;
+    expect((await post(`/m/${id}/notes`, { body: reply, reply_to: nid }, going[1].cookie)).status).toBe(303);
+    expect((await post(`/m/${id}/notes/${nid}/delete`, {}, going[0].cookie)).status).toBe(303);
+    expect(await get(`/m/${id}`, going[1].cookie)).not.toContain(reply);
+  });
+});
+
+describe("quick notes: one tap for the moment of meeting up", () => {
+  it("posts one of the four, as a note people going can see", async () => {
+    const { id, going } = await gathering(2, 0);
+    const [here, waiting] = going;
+    expect((await post(`/m/${id}/notes`, { quick: "I'm here" }, here.cookie)).status).toBe(303);
+    expect(await get(`/m/${id}`, waiting.cookie)).toContain("I&#39;m here");
+    expect((await post(`/m/${id}/notes`, { quick: "Come to my party" }, here.cookie)).status).toBe(400);
+  });
+});

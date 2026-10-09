@@ -137,6 +137,8 @@ export interface Meetup {
   audience: "circle" | "friends";
   audience_circle_id: number | null;
   circle_name: string | null;
+  // how many people going said "I came": a count, never who
+  came: number;
 }
 
 // How long after its start a meetup still counts as "on" rather than finished.
@@ -733,6 +735,10 @@ export function removeFriend(personId: number, otherId: number): void {
 addColumn("meetups", "audience", "TEXT NOT NULL DEFAULT 'friends'");
 addColumn("meetups", "audience_circle_id", "INTEGER");
 
+// Check-in (ADR 0002): each person marks their own join row "I came". The
+// only thing ever read back out is the count for one meetup.
+addColumn("joins", "came_at", "INTEGER");
+
 const VISIBLE = `(
   m.host_id = $v
   OR EXISTS (SELECT 1 FROM joins jv WHERE jv.meetup_id = m.id AND jv.person_id = $v)
@@ -742,7 +748,8 @@ const VISIBLE = `(
         SELECT 1 FROM friendships fv WHERE fv.a_id = MIN(m.host_id, $v) AND fv.b_id = MAX(m.host_id, $v)))
 )`;
 
-const visibleCols = `${meetupCols}, m.audience, m.audience_circle_id, cn.name AS circle_name`;
+const visibleCols = `${meetupCols}, m.audience, m.audience_circle_id, cn.name AS circle_name,
+  (SELECT COUNT(*) FROM joins jc WHERE jc.meetup_id = m.id AND jc.came_at IS NOT NULL) AS came`;
 const FROM = `FROM meetups m JOIN people h ON h.id = m.host_id LEFT JOIN circles cn ON cn.id = m.audience_circle_id`;
 
 const vq = {
@@ -764,3 +771,132 @@ const vq = {
     WHERE m.starts_at > $since AND (m.cancelled_at IS NULL OR m.starts_at > $now) ORDER BY m.starts_at`),
   setAudience: db.prepare("UPDATE meetups SET audience = $audience, audience_circle_id = $circle WHERE id = $id"),
 };
+
+
+// ---- Check-in (ADR 0002) ----
+// Open from the start time for an hour. Self-reported, one row per person per
+// meetup, and nothing anywhere reads one person's check-ins across meetups.
+export const CHECKIN_MS = 60 * 60 * 1000;
+
+const ckq = {
+  mine: db.prepare("SELECT came_at FROM joins WHERE meetup_id = $id AND person_id = $p"),
+  set: db.prepare("UPDATE joins SET came_at = $at WHERE meetup_id = $id AND person_id = $p"),
+};
+
+export function checkInOpen(m: { starts_at: number; cancelled_at: number | null }, now: number): boolean {
+  return m.cancelled_at === null && now >= m.starts_at && now <= m.starts_at + CHECKIN_MS;
+}
+
+export function myCheckIn(meetupId: number, personId: number): boolean {
+  const row = ckq.mine.get({ id: meetupId, p: personId }) as { came_at: number | null } | undefined;
+  return row?.came_at != null;
+}
+
+export type CheckInResult = "done" | "not_going" | "closed" | "missing";
+
+export function checkIn(meetupId: number, personId: number, came: boolean, now: number): CheckInResult {
+  return tx(() => {
+    const m = meetupFor(meetupId, personId);
+    if (!m) return "missing";
+    if (!isGoing(meetupId, personId)) return "not_going";
+    if (!checkInOpen(m, now)) return "closed";
+    ckq.set.run({ at: came ? now : null, id: meetupId, p: personId });
+    return "done";
+  });
+}
+
+// ---- Notes for people going (ADR 0002) ----
+// A notice board for one meetup: only people going (host included) can read
+// or post, leaving cuts you off at once, and it ends with the meetup: notes
+// are hidden RUNS_FOR_MS after the start and deleted soon after.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS meetup_notes (
+    id         INTEGER PRIMARY KEY,
+    meetup_id  INTEGER NOT NULL REFERENCES meetups(id),
+    person_id  INTEGER NOT NULL REFERENCES people(id),
+    body       TEXT    NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS meetup_notes_by_meetup ON meetup_notes (meetup_id, created_at);
+`);
+
+export const NOTE_MAX = 280;
+addColumn("meetup_notes", "reply_to", "INTEGER");
+
+export interface Note {
+  id: number;
+  // the note this one answers, or null for a note of its own
+  reply_to: number | null;
+  person_id: number;
+  name: string;
+  body: string;
+  created_at: number;
+}
+
+const nq = {
+  list: db.prepare(`SELECT n.id, n.reply_to, n.person_id, p.name, n.body, n.created_at
+    FROM meetup_notes n JOIN people p ON p.id = n.person_id JOIN meetups m ON m.id = n.meetup_id
+    WHERE n.meetup_id = $id AND m.starts_at > $since ORDER BY n.created_at, n.id`),
+  insert: db.prepare(
+    "INSERT INTO meetup_notes (meetup_id, person_id, body, created_at, reply_to) VALUES ($id, $p, $body, $at, $reply)",
+  ),
+  one: db.prepare(`SELECT n.meetup_id, n.person_id, n.reply_to, m.host_id
+    FROM meetup_notes n JOIN meetups m ON m.id = n.meetup_id WHERE n.id = $nid`),
+  // a note goes with the replies under it
+  remove: db.prepare("DELETE FROM meetup_notes WHERE id = $nid OR reply_to = $nid"),
+  purge: db.prepare(
+    "DELETE FROM meetup_notes WHERE meetup_id IN (SELECT id FROM meetups WHERE starts_at <= $since)",
+  ),
+};
+
+export function notesOpen(m: { starts_at: number }, now: number): boolean {
+  return m.starts_at > now - RUNS_FOR_MS;
+}
+
+// Callers check isGoing first; this only filters out ended meetups.
+export function notesFor(meetupId: number, now: number): Note[] {
+  return nq.list.all({ id: meetupId, since: now - RUNS_FOR_MS }) as unknown as Note[];
+}
+
+// A reply answers a note of its own on the same meetup: one level, no
+// replies to replies.
+export function addNote(
+  meetupId: number,
+  personId: number,
+  body: string,
+  now: number,
+  replyTo: number | null = null,
+): "posted" | "not_going" | "bad_reply" {
+  return tx(() => {
+    const m = getMeetup(meetupId);
+    if (!m || !isGoing(meetupId, personId) || !notesOpen(m, now)) return "not_going";
+    if (replyTo !== null) {
+      const parent = nq.one.get({ nid: replyTo }) as { meetup_id: number; reply_to: number | null } | undefined;
+      if (!parent || parent.meetup_id !== meetupId || parent.reply_to !== null) return "bad_reply";
+    }
+    nq.insert.run({ id: meetupId, p: personId, body, at: now, reply: replyTo });
+    return "posted";
+  });
+}
+
+// The quick replies: one tap, shown as "Mia ❤️", never added up into a
+// count (README: no likes).
+export const QUICK_REPLIES = ["❤️", "😂", "🎉", "🙏", "😅", "🥲", "😴", "💪"];
+
+// One-tap notes for the moment of meeting up, which is what the board is for.
+export const QUICK_NOTES = ["On my way", "5 min late", "I'm here", "Can't find you"];
+
+// Your own note, or any note on a meetup you host. Returns the meetup id it
+// came from, or null if it wasn't yours to remove.
+export function deleteNote(noteId: number, personId: number): number | null {
+  return tx(() => {
+    const n = nq.one.get({ nid: noteId }) as { meetup_id: number; person_id: number; host_id: number } | undefined;
+    if (!n || (n.person_id !== personId && n.host_id !== personId)) return null;
+    nq.remove.run({ nid: noteId });
+    return n.meetup_id;
+  });
+}
+
+export function purgeEndedNotes(now: number): void {
+  nq.purge.run({ since: now - RUNS_FOR_MS });
+}

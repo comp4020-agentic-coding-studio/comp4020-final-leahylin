@@ -58,6 +58,32 @@ button.link:focus-visible{outline:2px solid var(--link);outline-offset:2px}
 select{appearance:auto}
 .tag.for{background:var(--soft);color:var(--ink);font-weight:500}
 .hint.warn{color:#8A1F11}
+.checkin{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 16px;margin:12px 0}
+.checkin-count{margin:0 0 8px;font-size:17px}
+.notes{list-style:none;padding:0;margin:0 0 12px;display:grid;gap:10px}
+.note-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 16px}
+.note-head{display:flex;align-items:baseline;gap:8px}
+.note-head .note-actions{margin-left:auto}
+.note-body{margin:4px 0 0;overflow-wrap:anywhere}
+button.tiny{min-height:28px;min-width:28px;padding:0;font-size:18px;line-height:1;font-weight:500;background:transparent;color:var(--muted);border:1px solid transparent;border-radius:999px}
+button.tiny:hover,button.tiny:focus-visible{border-color:#D8CDBE;color:var(--ink)}
+button.tiny .icon.cross{width:16px;height:16px;margin:0;color:inherit}
+.replies{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px}
+.reply-item{display:flex;align-items:center;gap:8px;background:var(--soft);border-radius:12px;padding:6px 10px;font-size:15px}
+.reply-item>span{flex:1}
+.reply-body{overflow-wrap:anywhere}
+details.reply{margin-top:10px}
+details.reply summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;min-height:32px;padding:0 14px;border:1px solid #D8CDBE;border-radius:999px;color:var(--muted);font-size:14px}
+details.reply summary::-webkit-details-marker{display:none}
+details.reply[open] summary{color:var(--ink);border-color:var(--ink)}
+details.reply .note-form{margin-top:10px}
+.note-form{display:flex;gap:8px;align-items:center}
+.note-form input{flex:1}
+.quick{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.quick button.quiet{min-height:40px;padding:0 12px;font-size:18px}
+.quick-notes button.quiet{font-size:15px;padding:0 14px}
+.brand{white-space:nowrap}
+.who{flex-wrap:wrap;justify-content:flex-end;text-align:right}
 .auth-actions{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}
 button,.button{font:inherit;font-weight:700;border:0;border-radius:999px;min-height:44px;padding:0 20px;background:var(--c,var(--accent));color:#FFFFFF;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
 button.quiet,a.button.quiet{background:transparent;color:var(--muted);border:1px solid #D8CDBE;font-weight:500;padding:0 16px}

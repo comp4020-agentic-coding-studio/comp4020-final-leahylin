@@ -459,14 +459,12 @@ async function handle(
     const meetup = db.meetupFor(Number(m[1]), me.id);
     if (!meetup) return notFound(res, who);
     const interest = findInterest(meetup.interest)!;
-    const going = me ? db.isGoing(meetup.id, me.id) : false;
-    const body = views.meetupPage(
-      meetup,
-      me,
-      going,
-      db.attendees(meetup.id),
-      now,
-    );
+    const going = db.isGoing(meetup.id, me.id);
+    const body = views.meetupPage(meetup, me, going, db.attendees(meetup.id), now, {
+      // notes are for people going only: anyone else gets no list at all
+      notes: going ? db.notesFor(meetup.id, now) : null,
+      myCame: going && db.myCheckIn(meetup.id, me.id),
+    });
     return send(
       res,
       200,
@@ -572,6 +570,50 @@ async function handle(
     }
     if (result === "saved") announce(meetup);
     return redirect(res, back);
+  }
+
+  // ---- Notes and check-in (ADR 0002) ----
+  if ((m = /^\/m\/(\d+)\/(notes|checkin)$/.exec(path)) && method === "POST") {
+    const meetup = db.meetupFor(Number(m[1]), me.id);
+    if (!meetup) return notFound(res, who);
+    const f = await form(req);
+    const back = `/m/${meetup.id}`;
+    if (m[2] === "notes") {
+      // a quick reply must be one of the offered emoji; anything else is typed
+      const quick = f.get("quick");
+      if (quick !== null && !db.QUICK_REPLIES.includes(quick) && !db.QUICK_NOTES.includes(quick))
+        return send(res, 400, page({ title: "Notes", who, body: views.message("Not a quick reply", "Type it in the box instead.", back) }));
+      const body = quick ?? clean(f.get("body"), db.NOTE_MAX);
+      if (!body) return redirect(res, back);
+      const replyTo = /^\d+$/.test(f.get("reply_to") ?? "") ? Number(f.get("reply_to")) : null;
+      const posted = db.addNote(meetup.id, me.id, body, now, replyTo);
+      if (posted === "bad_reply")
+        return send(res, 400, page({ title: "Notes", who,
+          body: views.message("Can't reply to that", "Replies go under a note, one level deep.", back) }));
+      if (posted === "not_going")
+        return send(res, 403, page({ title: "Notes", who,
+          body: views.message("Only for people going", "Join this meetup to post a note to the group.", back) }));
+      // only people going hear about a note
+      events.publish([`m:${meetup.id}`], (pid) => pid !== null && db.isGoing(meetup.id, pid));
+      return redirect(res, `${back}#note`);
+    }
+    const result = db.checkIn(meetup.id, me.id, f.get("came") === "1", now);
+    if (result === "not_going")
+      return send(res, 403, page({ title: "Check-in", who,
+        body: views.message("Only for people going", "Check-in is for people who joined this meetup.", back) }));
+    if (result === "closed")
+      return send(res, 409, page({ title: "Check-in", who,
+        body: views.message("Check-in isn't open", "It opens at the start time and closes an hour later.", back) }));
+    if (result === "missing") return notFound(res, who);
+    announce(meetup);
+    return redirect(res, back);
+  }
+
+  if ((m = /^\/m\/(\d+)\/notes\/(\d+)\/delete$/.exec(path)) && method === "POST") {
+    const meetupId = db.deleteNote(Number(m[2]), me.id);
+    if (meetupId === null) return notFound(res, who);
+    events.publish([`m:${meetupId}`], (pid) => pid !== null && db.isGoing(meetupId, pid));
+    return redirect(res, `/m/${meetupId}#note`);
   }
 
   if (
@@ -698,6 +740,12 @@ const server = createServer((req, res) => {
 server.listen(port, "0.0.0.0", () =>
   console.log(`buddy up listening on :${port}`),
 );
+
+// Notes end with their meetup (ADR 0002). Queries already hide them two hours
+// after the start; this deletes them, at boot and every ten minutes. unref'd
+// so it never keeps the machine awake on its own.
+db.purgeEndedNotes(Date.now());
+setInterval(() => db.purgeEndedNotes(Date.now()), 10 * 60 * 1000).unref();
 
 // Fly stops the machine when nobody is using it. Killed outright, every open
 // stream is a severed socket, every client reconnects within seconds, and

@@ -65,6 +65,8 @@ Tested in `spec/` against the running app:
   else
 - meetups survive a fresh visit; changes reach open pages without a reload;
   every page works with script off
+- notes are only for people going
+- check-ins show only a count
 
 Only judged:
 

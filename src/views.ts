@@ -1,5 +1,5 @@
-import type { Circle, Meetup, MyMeetup, Person, Someone } from "./db.ts";
-import { CIRCLE_MAX } from "./db.ts";
+import type { Circle, Meetup, MyMeetup, Note, Person, Someone } from "./db.ts";
+import { CHECKIN_MS, CIRCLE_MAX, NOTE_MAX, QUICK_NOTES, QUICK_REPLIES, RUNS_FOR_MS } from "./db.ts";
 import { INTERESTS, findInterest, type Interest } from "./interests.ts";
 import { esc } from "./html.ts";
 import {
@@ -16,6 +16,8 @@ import { MAX_AHEAD_MS } from "./db.ts";
 // read the same on every phone.
 const PIN = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.1-7-11.5A7 7 0 0 1 19 9.5C19 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>`;
 const FLAG = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/></svg>`;
+
+const CROSS = `<svg class="icon cross" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>`;
 
 function where(place: string, meetingPoint: string, cls = "place"): string {
   return `<p class="${cls}">${PIN}<span>${esc(place)}</span></p>${
@@ -382,7 +384,7 @@ export function interestPage(
   const logList = `<ul class="log">${past
     .map(
       (m) =>
-        `<li>${esc(formatDay(m.starts_at))} · ${esc(m.place)} · ${m.going} went</li>`,
+        `<li>${esc(formatDay(m.starts_at))} · ${esc(m.place)} · ${m.came ? `${m.came} came` : `${m.going} signed up`}</li>`,
     )
     .join("")}</ul>`;
   // Folded away on a phone, where the list matters more; open beside the form
@@ -410,21 +412,92 @@ ${logWide}
 <a class="fab" href="#host">+ Start one</a>`;
 }
 
+// Check-in: from the start time, for an hour. Only ever a count; never who.
+function checkInBlock(m: Meetup, going: boolean, myCame: boolean, now: number): string {
+  if (m.cancelled_at !== null || now < m.starts_at) return "";
+  const open = now <= m.starts_at + CHECKIN_MS;
+  const count = `<p class="checkin-count"><b>${m.came} of ${m.going}</b> checked in</p>`;
+  if (!going || !open) return `<section class="checkin">${count}</section>`;
+  const button = myCame
+    ? `<p class="hint">You checked in. <form class="inline" method="post" action="/m/${m.id}/checkin"><input type="hidden" name="came" value="0"><button class="link">Undo</button></form></p>`
+    : `<form method="post" action="/m/${m.id}/checkin"><input type="hidden" name="came" value="1"><button>I came</button></form>`;
+  return `<section class="checkin">${count}${button}<p class="hint">Open until an hour after the start. Only the number is shown.</p></section>`;
+}
+
+// The notice board: for people going, and only while the meetup is on.
+function notesBlock(m: Meetup, me: Person, going: boolean, notes: Note[] | null, now: number): string {
+  if (m.starts_at <= now - RUNS_FOR_MS) return "";
+  if (!going || notes === null)
+    return `<h2>Notes for people going</h2><p class="hint">Join to see what the group is saying.</p>`;
+  const canDelete = (n: Note) => n.person_id === me.id || m.host_id === me.id;
+  const del = (n: Note) =>
+    canDelete(n)
+      ? `<form class="inline note-actions" method="post" action="/m/${m.id}/notes/${n.id}/delete"><button class="tiny" aria-label="Delete ${esc(n.name)}'s ${n.reply_to === null ? "note" : "reply"}" title="Delete">${CROSS}</button></form>`
+      : "";
+  // one level of replies, in the order they came; a quick reply reads
+  // "Mia ❤️" and is never totted up
+  const replies = (parent: Note) =>
+    notes
+      .filter((r) => r.reply_to === parent.id)
+      .map((r) => `<li class="reply-item"><span><b>${esc(r.name)}</b> <span class="reply-body">${esc(r.body)}</span></span>${del(r)}</li>`)
+      .join("");
+  const replyForm = (n: Note) => `
+<details class="reply">
+  <summary>Reply</summary>
+  <form method="post" action="/m/${m.id}/notes" class="note-form">
+    <input type="hidden" name="reply_to" value="${n.id}">
+    <label for="reply-${n.id}" class="sr-only">Reply to ${esc(n.name)}</label>
+    <input id="reply-${n.id}" name="body" maxlength="${NOTE_MAX}" placeholder="Reply, or any emoji from your keyboard">
+    <button type="submit">Send</button>
+  </form>
+  <form method="post" action="/m/${m.id}/notes" class="quick">
+    <input type="hidden" name="reply_to" value="${n.id}">
+    ${QUICK_REPLIES.map((e) => `<button class="quiet" name="quick" value="${e}" aria-label="Reply ${e}">${e}</button>`).join("")}
+  </form>
+</details>`;
+  const top = notes.filter((n) => n.reply_to === null);
+  const list = top.length
+    ? `<ul class="notes">${top
+        .map((n) => {
+          const r = replies(n);
+          return `<li class="note-card"><div class="note-head"><b>${esc(n.name)}</b><span class="hint">${esc(formatTime(n.created_at))}</span>${del(n)}</div><p class="note-body">${esc(n.body)}</p>${
+            r ? `<ul class="replies">${r}</ul>` : ""
+          }${replyForm(n)}</li>`;
+        })
+        .join("")}</ul>`
+    : `<p class="hint">Nothing yet. Running late, or the plan changed? Say it here.</p>`;
+  return `
+<h2>Notes for people going</h2>
+<div data-live="notes">${list}</div>
+<form method="post" action="/m/${m.id}/notes" id="note" class="note-form">
+  <label for="note-body" class="sr-only">Add a note</label>
+  <input id="note-body" name="body" maxlength="${NOTE_MAX}" required placeholder="e.g. 5 min late, start without me">
+  <button type="submit">Post</button>
+</form>
+<form method="post" action="/m/${m.id}/notes" class="quick quick-notes" aria-label="Quick notes">
+  ${QUICK_NOTES.map((t) => `<button class="quiet" name="quick" value="${esc(t)}">${esc(t)}</button>`).join("")}
+</form>
+<p class="hint">Only people going see these. They disappear two hours after the start.</p>`;
+}
+
 export function meetupPage(
   m: Meetup,
-  me: Person | null,
+  me: Person,
   going: boolean,
   people: { name: string }[],
   now: number,
+  extra: { notes: Note[] | null; myCame: boolean } = { notes: null, myCame: false },
 ): string {
   const interest = findInterest(m.interest)!;
   return `
 <p><a href="/i/${interest.slug}">← ${esc(interest.name)}</a></p>
 <div data-live="meetup">
 <ul class="meetups">${meetupCard(m, me, going, now)}</ul>
+${checkInBlock(m, going, extra.myCame, now)}
 <h2>Who's going</h2>
 <ul class="people">${people.map((p) => `<li>${esc(p.name)}</li>`).join("")}</ul>
 </div>
+${notesBlock(m, me, going, extra.notes, now)}
 `;
 }
 
