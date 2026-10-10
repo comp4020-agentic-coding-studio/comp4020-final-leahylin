@@ -1,104 +1,121 @@
 # Process overview
 
-*Crit 8 version.*
+*Crit 9 version. This file is rewritten at each crit.*
 
 ## From the brief to the harness
 
 The brief asks for a multi-user, real-time app that's good. I chose an
 **activity buddy finder** for ANU students: someone to run, play badminton or
-get coffee with, today or this week. The agent warned this could easily turn
-into a small Meetup clone, so before any code was written I narrowed it down:
+get coffee with this week. The agent warned early that this could easily turn
+into a small Meetup clone. So for crit 8 I narrowed it to one campus,
+meetups within seven days, and no accounts.
 
-- one campus, and meetups start within 7 days
-- no accounts, DMs, profiles or ratings
-- Crit 8 covers only hosting, joining, leaving and editing a meetup
+I wrote "good" down in three places that are meant to agree:
 
-Then I turned that into a harness, so "good" is written down in three places,
-not just in my head:
+- **README.md** is the argument: what good means and why ([`9a64a3e`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/9a64a3e)).
+- **CLAUDE.md** turns each commitment into a rule the agent must follow
+  ([`7fba852`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/7fba852)).
+- **spec/** tests the rules that can be checked, by sending real HTTP
+  requests to the running app ([`ce1f84b`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/ce1f84b)).
 
-- **README.md** says what good means
-  ([`9a64a3e`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/9a64a3e))
-- **CLAUDE.md** turns it into rules for the agent
-  ([`7fba852`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/7fba852))
-- **spec/** tests the parts that can be checked against the running app
-  ([`ce1f84b`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/ce1f84b))
+**Crit 8 changed the argument.** A pod member pointed out that anyone could
+see a meetup's time and place and turn up, so you could end up alone at a car
+park with a stranger. My crit 8 README said a light connection needs a light
+way in, so no accounts. That doesn't hold once the risk is who turns up,
+because a nickname tells you nothing about them.
 
-These three are meant to match. Each README commitment — concrete meetups, everything near, one-action join and leave, and a real head count — becomes a rule in `CLAUDE.md` and a test in `spec/`. `CLAUDE.md` tells the agent how the rule should be enforced, while `spec/` checks that it actually works by sending HTTP requests to the running app, just like a browser would.
+So I changed what good means, and I changed it in the harness first, before
+any code ([`095dfdf`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/095dfdf)). The README gained a fifth commitment, "only people
+you know". Accounts and friend lists came off "What I chose not to build".
+CLAUDE.md swapped "never add accounts" for rules about who may see a meetup,
+the circle size and password storage. The reasons and the options I turned
+down are in [decision 4](docs/decisions/0004-accounts-circles-friends.md).
+Then I built it in four steps, each with its own tests: accounts
+([`f99164a`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/f99164a)), circles ([`a8e8f24`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/a8e8f24)), friends ([`6138339`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/6138339)), and finally who
+can see a meetup ([`3765a4d`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/3765a4d)). A meetup now goes to one circle (at most 25
+people) or to the host's direct friends, never further.
+
+The rest of crit 9 came from [decision 2](docs/decisions/0002-crit9-scope.md),
+where I gave each feature a boundary before building it: a meeting point,
+live updates, a notice board for people going, and check-in ([`be29e69`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/be29e69)).
 
 ## Agentic workflow
 
-With the direction and scope agreed, I worked with the agent to build the app. Three things kept happening throughout the work: I directed the decisions, the agent grounded its work in real constraints instead of guessing, and both of us corrected mistakes when we found them.
+I work with Claude in one long conversation. Its shell runs against the repo
+on my machine. Three things happen throughout: I direct, the agent grounds its
+work in real constraints, and mistakes get corrected, ideally in the harness.
 
-**Directed.** I chose the scope (one campus, seven days) and what the app should do after people agree to meet. The agent proposed options; I picked between them. For example, I decided hosts could edit a meetup, but the app had to say exactly what changed and could never drop the head count below the number of people already going. I also decided the home page should show "You're going to" first when someone already has a plan, instead of the list of interests
-([`6d7b843`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/6d7b843),
-[`1fcb21b`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/1fcb21b)).
+**Directed.** The agent proposes options with trade-offs, and I choose. Some
+calls I made this crit:
 
-**Grounded.** The agent grounded its work in `fly.toml` (a 256 MB machine and one volume) and `spec/`, which it read before making changes. The spec tests the running app through real HTTP requests, including checking that a fresh visitor and the host, coming back later, still see the same meetup
-([`ce1f84b`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/ce1f84b)).
+- both circles and friends; friends of friends never
+- a circle cap of 25
+- people who already joined a meetup keep seeing it after leaving the circle,
+  so nobody loses the meeting point
+- who a meetup is for can't change after posting
+- emoji replies show by name and are never counted, because a count would be
+  a like
+- check-in stays open for one hour after the start
 
+I also chose the look. The agent mocked up three visual directions and I
+picked one ([`eef0c24`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/eef0c24)). When pages didn't match it, such as the notes
+section or the signed-out home page, I pointed it out and we fixed them
+([`f70bcaf`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/f70bcaf)).
 
-**Corrected.** I corrected the process when the agent moved too quickly. Early on, it wrote the whole app in one go and committed it without asking. I stopped it, had it undo the commits, and changed the workflow so it checked with me before making changes
-([`f38ad35...d5a90d2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/compare/f38ad35...d5a90d2)).
+**Grounded.** Before proposing anything, the agent reads `fly.toml` (256 MB,
+one volume), the ADRs and `spec/`. Every change is checked against the
+running app: 68 tests, including races for the last spot and for the 25th
+place in a circle. For layout, the agent screenshots the real app at phone,
+laptop and wide-screen sizes instead of guessing.
 
-The tests also caught mistakes in the app itself. When I ran `pnpm check:evidence`, one test for showing post-join changes exposed a timestamp bug: joined_at and the change timestamps could be identical when two actions happened in the same millisecond. The fix uses a monotonic counter so events always follow their actual order
-([`c571c50`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/c571c50)).
+**Corrected.** Some corrections were about how we work:
 
-These corrections changed how I used the agent: it should not guess or overbuild. It should work from the constraints, propose the next step, and let me decide before making the change.
+- At crit 8 the agent built and committed everything at once. I had it undo
+  that, and since then it asks before writing or committing
+  ([`f38ad35...d5a90d2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/compare/f38ad35...d5a90d2)).
+- It numbered the accounts decision 0003 without checking the folder, which
+  already had a 0003. I caught it and it was renumbered.
+- The notes and check-in code landed before CLAUDE.md had rules for them. I
+  had the harness catch up: rules for check-ins ("never who"), notes ("only
+  people going") and quick replies ("never counted") ([`89c5d6d`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/89c5d6d)).
+
+Others were caught by the tests, and the fix went where the mistake was:
+
+- Joining and editing in the same millisecond hid an edit notice. The app now
+  keeps events in order ([`c571c50`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/c571c50)).
+- Limiting who can see a meetup made the "only the host can cancel" tests
+  return 404 instead of 403. We didn't loosen the rule. We let the other
+  person into the circle, so the test still checks "can see it, but isn't
+  the host" ([`3765a4d`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/3765a4d)).
+- A test said a page must never contain "onerror". That failed because the
+  page's own live-update script uses the word. The test now looks for the
+  note's own marker ([`be29e69`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/be29e69)).
 
 ## Stack
 
-The stack is Node 24, the built-in SQLite on the Fly volume, and plain server-rendered pages with no framework. It fits the 256 MB machine, needs almost no dependencies, and SQLite transactions stop two people from taking the last spot at once.
+Node 24 runs TypeScript directly, with the built-in `node:sqlite` on the Fly
+volume and plain server-rendered forms. There's one dependency (`marked`, for
+`/readme/`) ([decision 1](docs/decisions/0001-stack.md)). It fits the 256 MB
+machine, and SQLite transactions are what make the hard rules hold: the head
+count, the 25-person circle, and posting only to a circle you're in.
 
-The full decision and trade-offs are in
-[docs/decisions/0001-stack.md](docs/decisions/0001-stack.md)
-([`d5a90d2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/d5a90d2)).
+Crit 9 tested that choice:
 
-## Crit 8 feedback: from strangers to people you know
-
-*Draft. This will be rewritten once the code is built.*
-
-At crit 8, a pod member pointed out a safety problem: anyone could see a
-meetup's time and place and turn up, so you might end up alone at a car park
-with a complete stranger. My crit 8 README had ruled out accounts and friend
-lists ("a light connection needs a light way in"). That argument doesn't hold
-up once the risk is who turns up, because a nickname tells you nothing about
-them.
-
-So I changed the idea. Meetups are now only for people you know: either a
-**circle** you joined by invite (a class, a hall floor, a club) or your
-**direct friends**. Before any code, I worked through the design with the
-agent. It laid out the options (friends only, circles only, both) with their
-trade-offs, and I made the calls:
-
-- **both circles and friends.** Circles cover groups, friends cover two
-  specific people
-- **friends of friends can't see "my friends" meetups**, because that brings
-  strangers back
-- **a circle holds at most 25 people.** Beyond that, members stop knowing
-  each other
-- **the crit 8 data is cleared**, since nicknames without passwords have
-  nothing to migrate into
-
-Following my own harness, the README changed first: a new fifth commitment,
-"you only meet people you know", and accounts and friend lists came off "What
-I chose not to build". Then CLAUDE.md: the "never add accounts" rule became
-rules about audiences, circle size, password storage and private friend
-lists. The reasoning and rejected alternatives are in
-[docs/decisions/0004-accounts-circles-friends.md](docs/decisions/0004-accounts-circles-friends.md).
-One small correction along the way: the agent first numbered this record
-0003 without checking the folder, which already held 0003. I caught it, and
-it was renumbered.
+- **Live updates** are server-sent events from the same process. The stream
+  carries a bare "something changed" signal, and each page re-fetches itself
+  under the viewer's own cookie ([decision 3](docs/decisions/0003-live-updates.md),
+  [`19ac552`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/19ac552)). That made decision 4 easier, because the stream never holds
+  content anyone could leak. Even so, a signal can reveal that a meetup
+  exists, so it now only reaches people who can see the meetup.
+- **The cost:** an open stream keeps the Fly machine awake, so the
+  scale-to-zero saving only holds while nobody is looking.
+- **Plain forms** mean every page still works with script off, which is
+  tested. The price is that every visibility check is my code to get right.
+  That's why decision 4's rule is written once, in one SQL fragment, and used
+  by every query.
 
 ## Next
 
-Crit 9 will add real-time updates, meeting-point details, an in-meetup notice
-board, and check-in. Each of those was broad enough to sprawl, so before any
-crit 9 code I narrowed each one to a concrete shape and a boundary — recorded
-in [docs/decisions/0002-crit9-scope.md](docs/decisions/0002-crit9-scope.md).
-
-Two are done: the meeting point, and live updates. Building the live layer
-turned up a cost the scope note had missed — an open stream keeps the Fly
-machine awake, so the scale-to-zero saving in
-[0001](docs/decisions/0001-stack.md) only holds while nobody is looking. That,
-and why the stream broadcasts a bare signal rather than content, are in
-[docs/decisions/0003-live-updates.md](docs/decisions/0003-live-updates.md).
+Deploy and check it with three real accounts. Then the crit 10 work: whatever
+the crit 9 pod finds, the judged questions in the README (is joining quick,
+does it feel light), and reading the check-in counts.
