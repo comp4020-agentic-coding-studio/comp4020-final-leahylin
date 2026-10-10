@@ -1,6 +1,6 @@
 # 4. Accounts, circles and friends: only meet people you know
 
-Date: 2026-10-09 · Status: proposed (crit 9, not yet built)
+Date: 2026-10-09 · Status: accepted, built (crit 9)
 
 ## Context
 

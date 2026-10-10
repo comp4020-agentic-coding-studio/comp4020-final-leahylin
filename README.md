@@ -25,29 +25,29 @@ not sign-ups. Five commitments:
 ## Who it's for
 
 ANU students who know people but rarely make plans with them: classmates,
-hallmates, club members. It's for groups of up to 25 who already trust each
-other. Also the showcase room, joined as one circle via an invite code on
-screen.
+hallmates, club members, in groups of up to 25. Also the showcase room,
+joined as one circle from a code on screen.
 
 ## What I chose not to build
 
 - **Public meetups or friends of friends:** how strangers come back.
 - **Email or password reset:** a lost password means a new account.
-- **Direct messages:** the point is to meet; group notes come in crit 9.
+- **Direct messages:** the point is to meet; notes are per meetup.
 - **Profiles, followers, likes, ratings:** no auditions.
-- **Search, maps, recommendations:** one campus; a list by time is enough.
+- **Search, maps, recommendations:** a list by time is enough.
 - **Public friend lists or counts:** your friends are visible only to you.
 
-Crit 8 also excluded accounts and friend lists. A pod member noted that
-meeting a stranger alone at a car park is a real risk, so I reversed both
+Crit 8 excluded accounts and friend lists, until a pod member noted that
+meeting a stranger alone is a real risk, so I reversed both
 ([decision 4](docs/decisions/0004-accounts-circles-friends.md)).
 
 ## What persists and what doesn't
 
 - **Accounts, circles and friends** stay until you leave or remove them.
 - **Meetups and who joined** stay; finished ones join a short log per
-  interest: *3 Oct · Black Mountain · 4 went*.
-- **Leaving** removes you completely: no "left" or "flaked" history.
+  interest: *3 Oct · Black Mountain · 4 came*.
+- **Notes and replies** vanish two hours after the start.
+- **Leaving** removes you completely: no "flaked" history.
 
 ## How good is checked
 
@@ -57,22 +57,22 @@ Tested in `spec/` against the running app:
   join it, or get its live updates
 - a circle refuses a 26th member
 - passwords are never stored as typed
-- a meetup missing time, place or head count, in the past, or over seven days
-  ahead is refused
-- join and leave each take one request; leaving frees the spot
+- a meetup missing time, place or head count, past, or over a week out is
+  refused
+- join and leave take one request each; leaving frees the spot
 - a full meetup refuses one more, even with simultaneous requests
-- an edit says exactly what changed (time, place, head count, note), nothing
-  else
+- an edit says exactly what changed, nothing else
 - meetups survive a fresh visit; changes reach open pages without a reload;
   every page works with script off
-- notes are only for people going
-- check-ins show only a count
+- notes and replies are only for people going; quick replies are never
+  counted
+- check-ins show only a count, never who
 
 Only judged:
 
 - *Is joining quick?* I'll time my pod.
 - *Does it feel light?* The crit will say.
-- *Do meetups happen?* Crit 9's check-in makes it countable.
+- *Do meetups happen?* Check-ins now count it.
 
 ## What I read and looked at
 
@@ -87,5 +87,5 @@ Only judged:
 
 ## Status
 
-Built: meetups, meeting points, live pages. Next: accounts, circles,
-friends, a notice board, check-in.
+Built through crit 9: live meetups for circles and friends, notes and
+check-in.

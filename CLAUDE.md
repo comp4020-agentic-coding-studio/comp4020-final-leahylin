@@ -14,6 +14,15 @@ around a rule; argue for changing the README first.
   ahead is refused on the server, whatever the form allows.
 - **Never record that someone left.** Leaving deletes the join row. No
   "flaked", "left" or "no-show" state, counts or history.
+- **Never show who checked in.** A meetup shows how many people said "I
+  came", never which ones, and nothing reads one person's check-ins across
+  more than one meetup: that would be an attendance record
+  ([decision 2](docs/decisions/0002-crit9-scope.md)).
+- **Never show a meetup's notes to anyone not going.** Notes and replies are
+  for people with a join row, host included; leaving cuts you off at once,
+  and they end two hours after the start.
+- **Never add up quick replies.** An emoji reply shows as one person's reply,
+  by name. No totals, no "❤️ 3": that's a like count.
 - **Never show a meetup to anyone outside its audience.** A meetup's audience
   is one circle or the host's direct friends, never the public and never
   friends of friends. The server checks it on every read and every write, and

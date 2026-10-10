@@ -1,6 +1,6 @@
 # 2. Crit 9 scope: real-time, meeting point, notice board, check-in
 
-Date: 2026-10-09 · Status: accepted (crit 9, not yet built)
+Date: 2026-10-09 · Status: accepted, built (crit 9)
 
 ## Context
 
