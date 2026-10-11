@@ -26,6 +26,7 @@ header.site .bar{max-width:40rem;margin:0 auto;padding:14px 16px;display:flex;ju
 .who b{color:var(--ink)}
 .who a.people-link{color:var(--ink);text-decoration:none;font-weight:700}
 @media (max-width:999px){.who{gap:6px;white-space:nowrap}.who .hey{display:none}.who b.me{display:inline-block;vertical-align:bottom;max-width:7em;overflow:hidden;text-overflow:ellipsis}}
+@media (max-width:479px){.who b.me,.who .me-sep{display:none}}
 .jump{display:flex;gap:16px;margin:4px 0 8px}
 .waiting{background:#FFF4D6;border:1px solid #F0D58A;border-radius:16px;padding:4px 18px 12px;margin:16px 0}
 .people-grid{display:grid;gap:8px 48px}
@@ -59,6 +60,9 @@ button.link:focus-visible{outline:2px solid var(--link);outline-offset:2px}
 .invite{font-family:ui-monospace,Menlo,monospace;font-size:14px;background:var(--soft)}
 .inline-gap{margin:12px 0}
 .join-number{font-family:var(--display);font-weight:800;font-size:44px;letter-spacing:.08em;margin:8px 0 4px;color:var(--ink)}
+.qr-box{margin:12px 0;display:flex;align-items:center;gap:14px}
+.qr-box .qr{width:160px;height:160px;flex:none;border:1px solid var(--line);border-radius:12px}
+.qr-box figcaption{margin:0}
 .code-input{font-size:20px;letter-spacing:.15em;max-width:12rem}
 .later>span:first-child{flex:1}
 .row-actions{display:flex;gap:8px;flex-wrap:wrap}
@@ -332,7 +336,7 @@ export function page(opts: {
     ? `${INTERESTS.map((i) => `<a href="/i/${i.slug}">${esc(i.name)}</a>`).join("")}<a href="/people">${people}</a>`
     : "";
   const who = opts.who
-    ? `<span class="who">${opts.topics?.length ? `<span class="live-dot" title="Live"></span>` : ""}<span class="hey">Hey </span><b class="me">${esc(opts.who.name)}</b> · <a class="people-link" href="/people" data-live="nav-people">${people}</a><span class="people-link" aria-hidden="true">·</span> <form class="inline" method="post" action="/logout"><button class="link">Log out</button></form></span>`
+    ? `<span class="who">${opts.topics?.length ? `<span class="live-dot" title="Live"></span>` : ""}<span class="hey">Hey </span><b class="me">${esc(opts.who.name)}</b><span class="me-sep"> ·</span> <a class="people-link" href="/people" data-live="nav-people">${people}</a><span class="people-link" aria-hidden="true">·</span> <form class="inline" method="post" action="/logout"><button class="link">Log out</button></form></span>`
     : `<span class="who"><a href="/login">Log in</a></span>`;
   const style = opts.colour ? ` style="--c:${esc(opts.colour)}"` : "";
   const live = opts.topics?.length

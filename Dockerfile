@@ -2,7 +2,8 @@
 
 # Buddy Up: Node 24 runs the TypeScript in src/ directly (type stripping), so
 # there's no build step. SQLite is node's built-in node:sqlite, so the only
-# runtime dependency is `marked`, for /readme/. docs/decisions/0001 says why.
+# runtime dependencies are `marked`, for /readme/, and `qrcode-generator`, for
+# circle invite QR codes. docs/decisions/0001 says why.
 FROM docker.io/library/node:24-alpine
 
 WORKDIR /app

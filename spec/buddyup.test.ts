@@ -820,6 +820,20 @@ describe("circles: a group joined by invite, at most 25", () => {
     expect((await post("/circles/code", { code: newNumber }, late.cookie)).status).toBe(303);
   });
 
+  it("shows the invite link as a QR code, which changes when the link is reset", async () => {
+    const owner = await person();
+    const member = await person();
+    const id = await circle(owner.cookie);
+    expect((await joinCircle(member.cookie, await inviteCode(owner.cookie, id))).status).toBe(303);
+    const qrOf = async (cookie: string) => /<svg class="qr"[\s\S]*?<\/svg>/.exec(await get(`/c/${id}`, cookie))?.[0];
+    const before = await qrOf(member.cookie);
+    expect(before).toContain('aria-label="QR code for the invite link"');
+    // any member can show it, like the link itself
+    expect(await qrOf(owner.cookie)).toBe(before);
+    expect((await post(`/c/${id}/reset`, {}, owner.cookie)).status).toBe(303);
+    expect(await qrOf(member.cookie)).not.toBe(before);
+  });
+
   it("hands the circle on when its owner leaves, and shuts you out once you've left", async () => {
     const owner = await person();
     const second = await person();

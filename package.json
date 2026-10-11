@@ -21,6 +21,7 @@
     "pnpm": ">=11"
   },
   "dependencies": {
-    "marked": "^18.0.14"
+    "marked": "^18.0.14",
+    "qrcode-generator": "^2.0.4"
   }
 }

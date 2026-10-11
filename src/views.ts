@@ -520,6 +520,7 @@ export function circlePage(
   members: { id: number; name: string }[],
   me: Person,
   link: string,
+  qr: string,
 ): string {
   const owner = c.owner_id === me.id;
   return `
@@ -530,9 +531,10 @@ export function circlePage(
 <h2>Invite someone you know</h2>
 <p class="hint">Anyone with the code or the link can join while there's room. Only share them with people you'd be glad to meet.</p>
 <p class="join-number" aria-label="Join code">${spacedNumber(c.join_number)}</p>
-<p class="hint">Type it in under Circles → Join with a code. Or send the link:</p>
+<p class="hint">Type it in under People → Join with a code. Or send the link:</p>
 <label for="invite" class="sr-only">Invite link</label>
 <input id="invite" class="invite" readonly value="${esc(link)}">
+<figure class="qr-box">${qr}<figcaption class="hint">Or scan it with a phone camera to open the link.</figcaption></figure>
 ${
   owner
     ? `<form method="post" action="/c/${c.id}/reset" class="inline-gap"><button class="quiet">Reset the link</button> <span class="hint">The old code and link stop working.</span></form>`

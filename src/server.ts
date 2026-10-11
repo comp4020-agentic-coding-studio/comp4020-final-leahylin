@@ -12,6 +12,7 @@ import { findInterest, INTERESTS } from "./interests.ts";
 import { page, type Who } from "./html.ts";
 import { parseSydney, toSydneyInput } from "./time.ts";
 import * as views from "./views.ts";
+import { qrSvg } from "./qr.ts";
 
 // A new name, so crit 8's nickname cookie is simply ignored rather than misread.
 const COOKIE = "buddyup_session";
@@ -325,7 +326,7 @@ async function handle(
     const link = `${proto}://${req.headers.host ?? "localhost"}/join/${circle.invite_code}`;
     return send(res, 200, page({ title: `${circle.name} · Buddy Up`, who,
       topics: [`c:${circle.id}`, `p:${me.id}`],
-      body: views.circlePage(circle, db.circleMembers(circle.id), me, link) }));
+      body: views.circlePage(circle, db.circleMembers(circle.id), me, link, qrSvg(link, "QR code for the invite link")) }));
   }
 
   if ((m = /^\/c\/(\d+)\/(leave|reset)$/.exec(path)) && method === "POST") {

@@ -49,3 +49,17 @@ transaction.
   process**, broadcasting after each write, with no pub/sub needed.
 - Hand-written routing and HTML escaping are mine to get right. The spec
   tests escaping, and CLAUDE.md requires `esc()` on every user value.
+
+## Update: a second dependency, for QR codes (2026-10-11)
+
+Circle invite links now show as a QR code too, so someone in the room can
+join by pointing a phone camera at a screen. Drawing a QR code means
+Reed-Solomon error correction and masking rules: about 300 lines that are
+easy to get subtly wrong, with a bad code failing silently on some phones.
+
+So `qrcode-generator` (MIT, no dependencies of its own) is the second runtime
+dependency. It only computes the grid; `src/qr.ts` draws it as inline SVG on
+the server, so the code shows with script off and needs no image route.
+Rejected: writing the encoder by hand, for the reason above; `qrcode`, which
+pulls in several packages to support PNG and canvas output this app doesn't
+need.
