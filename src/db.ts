@@ -338,6 +338,10 @@ export function upcoming(interest: string, now: number, viewerId: number): Meetu
   return vq.upcoming.all({ interest, since: now - RUNS_FOR_MS, v: viewerId }) as unknown as Meetup[];
 }
 
+export function calledOffIn(interest: string, now: number, viewerId: number): Meetup[] {
+  return vq.calledOff.all({ interest, now, v: viewerId }) as unknown as Meetup[];
+}
+
 export function finished(interest: string, now: number, viewerId: number): Meetup[] {
   return vq.finished.all({ interest, since: now - RUNS_FOR_MS, v: viewerId }) as unknown as Meetup[];
 }
@@ -845,6 +849,11 @@ const vq = {
   finished: db.prepare(`SELECT ${visibleCols} ${FROM}
     WHERE m.interest = $interest AND m.cancelled_at IS NULL AND m.starts_at <= $since AND ${VISIBLE}
     ORDER BY m.starts_at DESC LIMIT 20`),
+  // called off but not yet due: still listed, struck through, so nobody
+  // who saw it there turns up
+  calledOff: db.prepare(`SELECT ${visibleCols} ${FROM}
+    WHERE m.interest = $interest AND m.cancelled_at IS NOT NULL AND m.starts_at > $now AND ${VISIBLE}
+    ORDER BY m.starts_at`),
   counts: db.prepare(`SELECT m.interest, COUNT(*) AS n FROM meetups m
     WHERE m.cancelled_at IS NULL AND m.starts_at > $since AND ${VISIBLE} GROUP BY m.interest`),
   // what you're going to: still on, plus called-off ones until their start

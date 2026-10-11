@@ -429,6 +429,7 @@ async function handle(
       db.finished(interest.slug, now, me.id),
       now,
       views.hostForm(interest, now, {}, "", undefined, audienceChoices(me.id)),
+      db.calledOffIn(interest.slug, now, me.id),
     );
     return send(
       res,
@@ -748,7 +749,10 @@ async function handle(
       );
     }
     if (db.cancel(meetup.id, now)) announce(meetup);
-    return redirect(res, back);
+    // back to the page the button was on; anything else goes to the interest
+    const from = (await form(req)).get("from");
+    const to = from === "/" || from === `/m/${meetup.id}` ? from : `/i/${meetup.interest}`;
+    return redirect(res, to);
   }
 
   return notFound(res, who);

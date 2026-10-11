@@ -100,11 +100,14 @@ function spots(m: Meetup): string {
   return `<span class="spots"><span class="dots" aria-hidden="true">${dots}</span> ${m.going}/${m.capacity} going · ${words}</span>`;
 }
 
+// `from` is the page the button sits on: calling a meetup off brings you
+// back there.
 function actions(
   m: Meetup,
   me: Person | null,
   going: boolean,
   now: number,
+  from = `/i/${m.interest}`,
 ): string {
   if (m.cancelled_at !== null) return `<span class="tag">called off</span>`;
   if (m.starts_at <= now)
@@ -112,7 +115,7 @@ function actions(
   if (me && m.host_id === me.id) {
     return `<span class="tag you">you're hosting</span>
       <a class="button quiet" href="/m/${m.id}/edit">Edit</a>
-      <form class="inline" method="post" action="/m/${m.id}/cancel"><button class="quiet">Call it off</button></form>`;
+      <form class="inline" method="post" action="/m/${m.id}/cancel"><input type="hidden" name="from" value="${esc(from)}"><button class="quiet">Call it off</button></form>`;
   }
   if (going) {
     return `<span class="tag you">you're in</span>
@@ -147,6 +150,7 @@ export function meetupCard(
   going: boolean,
   now: number,
   showInterest = false,
+  from = `/i/${m.interest}`,
 ): string {
   const interest = findInterest(m.interest);
   const colour = interest ? ` style="--c:${interest.colour}"` : "";
@@ -162,7 +166,7 @@ export function meetupCard(
   ${where(m.place, m.meeting_point)}
   ${m.note ? `<p class="note">${esc(m.note)}</p>` : ""}
   <p class="hint">hosted by ${esc(m.host_name)} · ${forWhom}</p>
-  <div class="row">${spots(m)}<span>${actions(m, me, going, now)}</span></div>
+  <div class="row">${spots(m)}<span>${actions(m, me, going, now, from)}</span></div>
 </li>`;
 }
 
@@ -213,20 +217,26 @@ function nextUp(
    ${m.note ? `<p class="note">${esc(m.note)}</p>` : ""}
    <p class="hint people-label">Who's coming</p>
    <ul class="people">${people.map((p) => `<li>${esc(p.name)}</li>`).join("")}</ul>
-   <div class="row">${spots(m)}<span>${actions(m, me, true, now)}</span></div>
+   <div class="row">${spots(m)}<span>${actions(m, me, true, now, "/")}</span></div>
   </div>
  </div>
 </section>`;
 }
 
 // Everything after the next one, one line each.
+// A called-off meetup as one struck-through line, saying who called it off.
+function offRow(m: Meetup, showInterest = true): string {
+  const interest = findInterest(m.interest);
+  const colour = interest ? ` style="--c:${interest.colour}"` : "";
+  const what = showInterest ? ` · ${esc(interest?.name ?? "")}` : "";
+  return `<li class="later off"${colour}><a href="/m/${m.id}"><s>${esc(formatWhen(m.starts_at))}${what} · ${esc(m.place)}</s></a>
+      <span class="tag changed">Called off by ${esc(m.host_name)}</span></li>`;
+}
+
 function laterRow(m: MyMeetup, me: Person, now: number): string {
   const interest = findInterest(m.interest);
   const colour = interest ? ` style="--c:${interest.colour}"` : "";
-  if (m.cancelled_at !== null) {
-    return `<li class="later off"${colour}><a href="/m/${m.id}"><s>${esc(formatWhen(m.starts_at))} · ${esc(interest?.name ?? "")} · ${esc(m.place)}</s></a>
-      <span class="tag changed">Called off by ${esc(m.host_name)}</span></li>`;
-  }
+  if (m.cancelled_at !== null) return offRow(m);
   const lines = changedSinceJoined(m);
   return `<li class="later"${colour}><a href="/m/${m.id}">${esc(formatWhen(m.starts_at))} · ${esc(interest?.name ?? "")} · ${esc(m.place)} · ${m.going}/${m.capacity}</a>${
     m.host_id === me.id ? ` <span class="tag you">hosting</span>` : ""
@@ -434,10 +444,14 @@ export function interestPage(
   past: Meetup[],
   now: number,
   form: string,
+  calledOff: Meetup[] = [],
 ): string {
   const items = list.length
     ? `<ul class="meetups grid">${list.map((m) => meetupCard(m, me, goingIds.has(m.id), now)).join("")}</ul>`
     : `<p class="empty">Nothing on yet. Be the first. Someone's probably waiting for this.</p>`;
+  const off = calledOff.length
+    ? `<ul class="later-list called-off">${calledOff.map((m) => offRow(m, false)).join("")}</ul>`
+    : "";
   const logList = `<ul class="log">${past
     .map(
       (m) =>
@@ -458,7 +472,7 @@ export function interestPage(
 <h1 style="color:${interest.colour}">${esc(interest.name)}</h1>
 <p class="lede">${esc(interest.blurb)}</p>
 <h2>Coming up</h2>
-<div data-live="coming">${items}</div>
+<div data-live="coming">${items}${off}</div>
 ${logPhone}
 </div>
 <aside class="side">
@@ -549,7 +563,7 @@ export function meetupPage(
   return `
 <p><a href="/i/${interest.slug}">← ${esc(interest.name)}</a></p>
 <div data-live="meetup">
-<ul class="meetups">${meetupCard(m, me, going, now)}</ul>
+<ul class="meetups">${meetupCard(m, me, going, now, false, `/m/${m.id}`)}</ul>
 ${checkInBlock(m, going, extra.myCame, now)}
 <h2>Who's going</h2>
 <ul class="people">${people.map((p) => `<li>${esc(p.name)}</li>`).join("")}</ul>

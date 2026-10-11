@@ -37,6 +37,7 @@ header.site .bar{max-width:40rem;margin:0 auto;padding:14px 16px;display:flex;ju
 .your-people{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-top:18px}
 .your-people h2{margin:0 0 4px}
 .your-people .more{margin:10px 0 0}
+.called-off{margin-top:12px}
 .people-page{display:flex;flex-direction:column}
 .p-main,.p-side,.p-lists{display:contents}
 .p-head{order:1}.p-note{order:2}.p-req{order:3}.p-c{order:4}.p-join{order:5}.p-start{order:6}.p-f{order:7}.p-add{order:8}

@@ -419,6 +419,51 @@ describe("you're going to: opening the app tells you where to be", () => {
     );
   });
 
+  it("keeps the host on the page they called it off from", async () => {
+    const hostP = await person();
+    const fromHome = await host(hostP.cookie, {}, "running");
+    const fromList = await host(hostP.cookie, {}, "running");
+    const fromPage = await host(hostP.cookie, {}, "running");
+    const stray = await host(hostP.cookie, {}, "running");
+
+    const a = await post(`/m/${fromHome}/cancel`, { from: "/" }, hostP.cookie);
+    expect(a.headers.get("location")).toBe("/");
+    const b = await post(`/m/${fromList}/cancel`, { from: "/i/running" }, hostP.cookie);
+    expect(b.headers.get("location")).toBe("/i/running");
+    const c = await post(`/m/${fromPage}/cancel`, { from: `/m/${fromPage}` }, hostP.cookie);
+    expect(c.headers.get("location")).toBe(`/m/${fromPage}`);
+    // anywhere else isn't a page to send someone to
+    const d = await post(`/m/${stray}/cancel`, { from: "https://example.com/" }, hostP.cookie);
+    expect(d.headers.get("location")).toBe("/i/running");
+  });
+
+  it("keeps a called-off meetup on its interest page, struck through, until it was due", async () => {
+    const hostP = await person();
+    const guest = await person();
+    const outsider = await person();
+    const place = `Struck Oval ${tag()}`;
+    const id = await host(hostP.cookie, { place }, "badminton");
+    expect((await joinMeetup(id, guest.cookie)).status).toBe(303);
+    expect((await post(`/m/${id}/cancel`, { from: "/i/badminton" }, hostP.cookie)).status).toBe(303);
+    for (const cookie of [hostP.cookie, guest.cookie]) {
+      const html = await get("/i/badminton", cookie);
+      const row = new RegExp(`<s>[^<]*${place}</s></a>\\s*<span class="tag changed">Called off by ${hostP.name}</span>`);
+      expect(html).toMatch(row);
+      // and no longer as a card you could join
+      expect(html).not.toContain(`id="m${id}"`);
+    }
+    // still only for people who could see it
+    expect(await get("/i/badminton", outsider.cookie)).not.toContain(place);
+  });
+
+  it("puts the page it's on in the Call it off button", async () => {
+    const hostP = await person();
+    const id = await host(hostP.cookie, {}, "running");
+    expect(await get("/", hostP.cookie)).toContain('name="from" value="/"');
+    expect(await get("/i/running", hostP.cookie)).toContain('name="from" value="/i/running"');
+    expect(await get(`/m/${id}`, hostP.cookie)).toContain(`name="from" value="/m/${id}"`);
+  });
+
   it("doesn't treat a called-off meetup as a plan, but still shows it's off", async () => {
     const hostP = await person();
     const guest = await person();
