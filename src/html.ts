@@ -21,6 +21,21 @@ header.site .bar{max-width:40rem;margin:0 auto;padding:14px 16px;display:flex;ju
 .brand{font-family:var(--display);font-weight:800;font-size:22px;color:var(--ink);text-decoration:none}
 .nav{display:none;gap:24px;font-size:15px}
 .nav a{color:var(--ink);text-decoration:none}
+.nav-live{display:contents}
+details.menu{position:relative}
+details.menu summary{list-style:none;cursor:pointer;color:var(--ink);display:inline-flex;align-items:center;gap:4px}
+details.menu summary::-webkit-details-marker{display:none}
+details.menu summary::after{content:"";width:6px;height:6px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:translateY(-2px) rotate(45deg);margin-left:4px}
+details.menu[open] summary::after{transform:translateY(1px) rotate(-135deg)}
+details.menu summary:hover{color:var(--link)}
+.menu-list{position:absolute;top:calc(100% + 10px);left:-12px;z-index:30;min-width:190px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 28px rgba(60,40,20,.14);padding:6px;display:grid}
+.menu-list a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;color:var(--ink);text-decoration:none;font-size:15px;white-space:nowrap}
+.menu-list a:hover,.menu-list a:focus-visible{background:var(--soft)}
+.menu-dot{width:10px;height:10px;border-radius:50%;flex:none}
+.phone-menu summary{font-weight:700}
+.phone-menu .menu-list{left:auto;right:-60px}
+.menu-out{border-top:1px solid var(--line);margin-top:4px;padding:10px 12px 6px}
+.wide-out{display:none}
 .nav a:hover{color:var(--link)}
 .who{font-size:14px;color:var(--muted);display:flex;align-items:center;gap:8px}
 .who b{color:var(--ink)}
@@ -172,7 +187,8 @@ footer{max-width:40rem;margin:0 auto;padding:16px;color:var(--muted);font-size:1
 header.site .bar,.wrap,footer{max-width:1440px;padding-left:clamp(24px,4vw,64px);padding-right:clamp(24px,4vw,64px)}
 main.wrap:not(:has(.cols,.interests,.hero,.people-page)){max-width:calc(44rem + 2 * clamp(24px,4vw,64px))}
 .nav{display:flex}
-.people-link{display:none}
+.people-link,.phone-menu{display:none}
+.wide-out{display:inline}
 .people-page{display:grid;grid-template-columns:minmax(0,1fr) clamp(300px,26vw,400px);gap:clamp(32px,3vw,56px);align-items:start}
 .p-main,.p-side{display:block}
 .p-lists{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px clamp(24px,2.5vw,40px)}
@@ -203,6 +219,15 @@ main.wrap{padding-top:36px;padding-bottom:48px}
 // with JavaScript off"). All it does is notice that the server said something
 // changed, ask for this same page again, and swap in the parts that differ. The
 // rendering stays in views.ts, so there is no second copy of it here to drift.
+// Closes the Activities menu on a click outside it, or on Escape.
+const MENU_JS = `document.addEventListener("click", function (e) {
+  document.querySelectorAll("details.menu[open]").forEach(function (d) { if (!d.contains(e.target)) d.removeAttribute("open"); });
+});
+document.addEventListener("keydown", function (e) {
+  if (e.key !== "Escape") return;
+  document.querySelectorAll("details.menu[open]").forEach(function (d) { d.removeAttribute("open"); d.querySelector("summary").focus(); });
+});`;
+
 const LIVE_JS = `
 (function () {
   var topics = document.body.getAttribute("data-topics");
@@ -349,11 +374,19 @@ export function page(opts: {
   // Signed out there is nothing behind these links but the login page, so
   // only "About" is offered.
   const people = requests ? `People <span class="count">(${requests})</span>` : "People";
+  // The interests as one dropdown. A plain <details>, so it opens with script
+  // off; MENU_JS only closes it on a click elsewhere or Escape. It sits
+  // outside the live regions, so a live update never snaps it shut.
+  // On a phone there's no room for "Log out" beside it, so it goes in there.
+  const menu = (extra: string, tail = "") => `<details class="menu${extra}"><summary>Activities</summary><div class="menu-list">${INTERESTS.map(
+    (i) => `<a href="/i/${i.slug}"><span class="menu-dot" style="background:${i.colour}"></span>${esc(i.name)}</a>`,
+  ).join("")}${tail}</div></details>`;
+  const logout = `<form class="inline" method="post" action="/logout"><button class="link">Log out</button></form>`;
   const nav = opts.who
-    ? `${INTERESTS.map((i) => `<a href="/i/${i.slug}">${esc(i.name)}</a>`).join("")}<a href="/people">${people}</a>`
+    ? `${menu("")}<span class="nav-live" data-live="nav"><a href="/people">${people}</a></span>`
     : "";
   const who = opts.who
-    ? `<span class="who">${opts.topics?.length ? `<span class="live-dot" title="Live"></span>` : ""}<span class="hey">Hey </span><b class="me">${esc(opts.who.name)}</b><span class="me-sep"> ·</span> <a class="people-link" href="/people" data-live="nav-people">${people}</a><span class="people-link" aria-hidden="true">·</span> <form class="inline" method="post" action="/logout"><button class="link">Log out</button></form></span>`
+    ? `<span class="who">${opts.topics?.length ? `<span class="live-dot" title="Live"></span>` : ""}<span class="hey">Hey </span><b class="me">${esc(opts.who.name)}</b><span class="me-sep"> ·</span> ${menu(" phone-menu", `<div class="menu-out">${logout}</div>`)}<span class="people-link" aria-hidden="true">·</span> <a class="people-link" href="/people" data-live="nav-people">${people}</a><span class="wide-out"><span aria-hidden="true">·</span> ${logout}</span></span>`
     : `<span class="who"><a href="/login">Log in</a></span>`;
   const style = opts.colour ? ` style="--c:${esc(opts.colour)}"` : "";
   const live = opts.topics?.length
@@ -363,6 +396,7 @@ export function page(opts: {
     ? `<div id="live-status" class="sr-only" role="status" aria-live="polite"></div>
 <script>${LIVE_JS}</script>`
     : "";
+  const menuScript = opts.who ? `<script>${MENU_JS}</script>` : "";
   return `<!doctype html>
 <html lang="en-AU">
 <head>
@@ -375,12 +409,13 @@ export function page(opts: {
 <style>${CSS}</style>
 </head>
 <body${style}${live}>
-<header class="site"><div class="bar${opts.who ? "" : " out"}"><a class="brand" href="/">Buddy Up</a><nav class="nav" aria-label="Main" data-live="nav">${nav}<a href="/readme/">About</a></nav>${who}</div></header>
+<header class="site"><div class="bar${opts.who ? "" : " out"}"><a class="brand" href="/">Buddy Up</a><nav class="nav" aria-label="Main">${nav}<a href="/readme/">About</a></nav>${who}</div></header>
 <main class="wrap">
 ${opts.body}
 </main>
 <footer>Find someone to do the thing with, today. · <a href="/readme/">What this is, and why</a></footer>
 ${script}
+${menuScript}
 </body>
 </html>`;
 }

@@ -1372,6 +1372,20 @@ describe("home: finding your people", () => {
   });
 });
 
+describe("header: the activities in one menu", () => {
+  it("lists every interest under Activities, as plain links that work with script off", async () => {
+    const me = await person();
+    const html = await get("/people", me.cookie);
+    const menu = /<details class="menu"><summary>Activities<\/summary>([\s\S]*?)<\/details>/.exec(html)?.[1] ?? "";
+    for (const slug of ["running", "badminton", "coffee"]) expect(menu).toContain(`href="/i/${slug}"`);
+    // the phone header has the same menu
+    expect(html).toContain('<details class="menu phone-menu"><summary>Activities</summary>');
+    // nothing outside the menu lists them in the bar any more
+    const nav = /<nav class="nav"[^>]*>([\s\S]*?)<\/nav>/.exec(html)?.[1] ?? "";
+    expect(nav.replace(/<details[\s\S]*?<\/details>/, "")).not.toContain('href="/i/');
+  });
+});
+
 describe("signed out, the header offers only what's there", () => {
   it("shows About and Log in, not links that only lead to the login page", async () => {
     const html = await (await fetch(new URL("/", baseUrl))).text();
