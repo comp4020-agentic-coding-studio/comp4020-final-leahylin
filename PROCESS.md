@@ -132,5 +132,5 @@ Crit 9 tested that choice:
 
 ## Next
 
-Deploy and check it with three real accounts. Then crit 10: what the pod
-finds, the judged questions in the README, and reading the check-in counts.
+Crit 10: what the pod finds, the judged questions in the README, and reading
+the check-in counts.
