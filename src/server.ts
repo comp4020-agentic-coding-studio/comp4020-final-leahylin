@@ -264,19 +264,36 @@ async function handle(
     return redirect(res, "/login");
   }
 
-  // ---- Circles (decision 4, step 2) ----
-  if (path === "/circles" && method === "GET") {
+  // ---- People: circles and friends on one page ----
+  // A form that fails re-renders this page with its error beside that form.
+  const showPeople = (status: number, forms: views.PeopleForms = {}) => {
     const circles = db.myCircles(me.id);
-    return send(res, 200, page({ title: "Circles · Buddy Up", who,
-      topics: [`p:${me.id}`, ...circles.map((c) => `c:${c.id}`)],
-      body: views.circlesPage(circles) }));
+    return send(res, status, page({ title: "People · Buddy Up", who,
+      // only a 200 from a GET is safe to re-fetch live (see page())
+      topics: status === 200 ? [`p:${me.id}`, ...circles.map((c) => `c:${c.id}`)] : undefined,
+      body: views.peoplePage(circles, db.friendsOf(me.id), db.incomingRequests(me.id), db.outgoingRequests(me.id), forms) }));
+  };
+
+  if (path === "/people" && method === "GET") {
+    const done = url.searchParams.get("done");
+    const notes: Record<string, string> = {
+      sent: "Request sent. They'll see it next time they look.",
+      friends: "You're friends now.",
+    };
+    return showPeople(200, { note: done ? notes[done] : undefined });
   }
+
+  // the old pages, kept so links and bookmarks still work
+  if ((path === "/circles" || path === "/friends") && method === "GET") {
+    return redirect(res, `/people${url.search}#${path.slice(1)}`);
+  }
+
+  // ---- Circles (decision 4, step 2) ----
 
   if (path === "/circles" && method === "POST") {
     const name = clean((await form(req)).get("name"), 40);
     if (!name)
-      return send(res, 400, page({ title: "Circles · Buddy Up", who,
-        body: views.circlesPage(db.myCircles(me.id), "", "Give the circle a name people will recognise.") }));
+      return showPeople(400, { circleError: "Give the circle a name people will recognise." });
     return redirect(res, `/c/${db.createCircle(name, me.id)}`);
   }
 
@@ -285,8 +302,7 @@ async function handle(
   if (path === "/circles/code" && method === "POST") {
     const typed = ((await form(req)).get("code") ?? "").replace(/\s+/g, "");
     const show = (status: number, error: string) =>
-      send(res, status, page({ title: "Circles · Buddy Up", who,
-        body: views.circlesPage(db.myCircles(me.id), "", "", { value: typed.slice(0, 7), error }) }));
+      showPeople(status, { code: { value: typed.slice(0, 7), error } });
     const until = db.codeLockedUntil(me.id, now);
     if (until !== null) {
       const mins = Math.max(1, Math.ceil((until - now) / 60000));
@@ -319,7 +335,7 @@ async function handle(
       db.leaveCircle(id, me.id);
       tellCircle(id);
       tellPerson(me.id);
-      return redirect(res, "/circles");
+      return redirect(res, "/people#circles");
     }
     if (!db.resetInvite(id, me.id))
       return send(res, 403, page({ title: "Not yours", who,
@@ -332,7 +348,7 @@ async function handle(
     const code = m[1];
     const gone = () =>
       send(res, 404, page({ title: "Link expired", who,
-        body: views.message("This invite link doesn't work", "It may have been reset. Ask someone in the circle for a fresh one.", "/circles") }));
+        body: views.message("This invite link doesn't work", "It may have been reset. Ask someone in the circle for a fresh one.", "/people#circles") }));
     if (method === "GET") {
       const circle = db.circleByCode(code);
       if (!circle) return gone();
@@ -344,7 +360,7 @@ async function handle(
       if (joined.result === "missing") return gone();
       if (joined.result === "full")
         return send(res, 409, page({ title: "Full", who,
-          body: views.message("This circle is full", `A circle holds at most ${db.CIRCLE_MAX} people, so everyone in it can know each other.`, "/circles") }));
+          body: views.message("This circle is full", `A circle holds at most ${db.CIRCLE_MAX} people, so everyone in it can know each other.`, "/people#circles") }));
       if (joined.result === "joined") {
         tellCircle(joined.id);
         tellPerson(me.id);
@@ -354,25 +370,11 @@ async function handle(
   }
 
   // ---- Friends (decision 4, step 3) ----
-  if (path === "/friends" && method === "GET") {
-    const done = url.searchParams.get("done");
-    const notes: Record<string, string> = {
-      sent: "Request sent. They'll see it next time they look.",
-      friends: "You're friends now.",
-    };
-    return send(res, 200, page({ title: "Friends · Buddy Up", who,
-      topics: [`p:${me.id}`],
-      body: views.friendsPage(db.friendsOf(me.id), db.incomingRequests(me.id), db.outgoingRequests(me.id),
-        { note: done ? notes[done] : undefined }) }));
-  }
-
   if (path === "/friends" && method === "POST") {
     const username = ((await form(req)).get("username") ?? "").trim().replace(/^@/, "").toLowerCase().slice(0, 40);
     const asked = db.askFriend(me.id, username, now);
     const show = (status: number, error: string) =>
-      send(res, status, page({ title: "Friends · Buddy Up", who,
-        body: views.friendsPage(db.friendsOf(me.id), db.incomingRequests(me.id), db.outgoingRequests(me.id),
-          { username, error }) }));
+      showPeople(status, { username, friendError: error });
     switch (asked.result) {
       case "missing":
         return show(404, `There's no one with the username "${username}". Check the spelling with them.`);
@@ -388,10 +390,10 @@ async function handle(
       }
       case "became_friends":
         tellPerson(asked.who.id, me.id);
-        return redirect(res, "/friends?done=friends");
+        return redirect(res, "/people?done=friends#friends");
       case "sent":
         tellPerson(asked.who.id, me.id);
-        return redirect(res, "/friends?done=sent");
+        return redirect(res, "/people?done=sent#friends");
     }
   }
 
@@ -401,13 +403,13 @@ async function handle(
     if (m[2] === "accept") {
       if (db.acceptFriend(me.id, other, now)) {
         tellPerson(other, me.id);
-        return redirect(res, "/friends?done=friends");
+        return redirect(res, "/people?done=friends#friends");
       }
     } else if (m[2] === "decline") db.declineFriend(me.id, other);
     else if (m[2] === "cancel") db.cancelFriendRequest(me.id, other);
     else db.removeFriend(me.id, other);
     tellPerson(other, me.id);
-    return redirect(res, "/friends");
+    return redirect(res, "/people#friends");
   }
 
   if ((m = /^\/i\/([a-z]+)$/.exec(path)) && method === "GET") {

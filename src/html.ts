@@ -24,6 +24,12 @@ header.site .bar{max-width:40rem;margin:0 auto;padding:14px 16px;display:flex;ju
 .nav a:hover{color:var(--link)}
 .who{font-size:14px;color:var(--muted);display:flex;align-items:center;gap:8px}
 .who b{color:var(--ink)}
+.who a.people-link{color:var(--ink);text-decoration:none;font-weight:700}
+@media (max-width:999px){.who{gap:6px;white-space:nowrap}.who .hey{display:none}.who b.me{display:inline-block;vertical-align:bottom;max-width:7em;overflow:hidden;text-overflow:ellipsis}}
+.jump{display:flex;gap:16px;margin:4px 0 8px}
+.waiting{background:#FFF4D6;border:1px solid #F0D58A;border-radius:16px;padding:4px 18px 12px;margin:16px 0}
+.people-grid{display:grid;gap:8px 48px}
+h3{font-size:16px;margin:20px 0 8px}
 .live-dot{width:8px;height:8px;border-radius:50%;background:#15803D;flex:none}
 main.wrap{padding-top:20px;padding-bottom:96px}
 h1{font-family:var(--display);font-weight:800;font-size:30px;line-height:1.1;margin:0 0 6px}
@@ -151,6 +157,8 @@ footer{max-width:40rem;margin:0 auto;padding:16px;color:var(--muted);font-size:1
 header.site .bar,.wrap,footer{max-width:1440px;padding-left:clamp(24px,4vw,64px);padding-right:clamp(24px,4vw,64px)}
 main.wrap:not(:has(.cols,.interests,.hero)){max-width:calc(44rem + 2 * clamp(24px,4vw,64px))}
 .nav{display:flex}
+.people-link{display:none}
+.people-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 h1{font-size:clamp(36px,3.2vw,52px)}
 main.wrap{padding-top:36px;padding-bottom:48px}
 .cols{display:grid;grid-template-columns:minmax(0,1fr) clamp(300px,26vw,400px);gap:clamp(32px,3vw,56px);align-items:start}
@@ -319,11 +327,12 @@ export function page(opts: {
   const requests = opts.who?.requests ?? 0;
   // Signed out there is nothing behind these links but the login page, so
   // only "About" is offered.
+  const people = requests ? `People <span class="count">(${requests})</span>` : "People";
   const nav = opts.who
-    ? `${INTERESTS.map((i) => `<a href="/i/${i.slug}">${esc(i.name)}</a>`).join("")}<a href="/circles">Circles</a><a href="/friends">${requests ? `Friends <span class="count">(${requests})</span>` : "Friends"}</a>`
+    ? `${INTERESTS.map((i) => `<a href="/i/${i.slug}">${esc(i.name)}</a>`).join("")}<a href="/people">${people}</a>`
     : "";
   const who = opts.who
-    ? `<span class="who">${opts.topics?.length ? `<span class="live-dot" title="Live"></span>` : ""}Hey <b>${esc(opts.who.name)}</b> · <form class="inline" method="post" action="/logout"><button class="link">Log out</button></form></span>`
+    ? `<span class="who">${opts.topics?.length ? `<span class="live-dot" title="Live"></span>` : ""}<span class="hey">Hey </span><b class="me">${esc(opts.who.name)}</b> · <a class="people-link" href="/people" data-live="nav-people">${people}</a><span class="people-link" aria-hidden="true">·</span> <form class="inline" method="post" action="/logout"><button class="link">Log out</button></form></span>`
     : `<span class="who"><a href="/login">Log in</a></span>`;
   const style = opts.colour ? ` style="--c:${esc(opts.colour)}"` : "";
   const live = opts.topics?.length

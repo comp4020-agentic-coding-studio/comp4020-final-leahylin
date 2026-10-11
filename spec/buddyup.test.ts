@@ -842,7 +842,7 @@ async function ask(fromCookie: string, username: string): Promise<Response> {
 
 // The id the app uses for someone, read off the asker's own friends page.
 async function idOf(cookie: string, username: string): Promise<number> {
-  const html = await get("/friends", cookie);
+  const html = await get("/people", cookie);
   const at = html.indexOf(`@${username}`);
   expect(at).toBeGreaterThan(-1);
   const id = /\/friends\/(\d+)\//.exec(html.slice(at))?.[1];
@@ -861,15 +861,15 @@ describe("friends: both ways, and only you see yours", () => {
     const b = await person();
     expect((await ask(a.cookie, b.username)).status).toBe(303);
     // b sees it waiting, with a count in the header
-    const bPage = await get("/friends", b.cookie);
-    expect(bPage).toContain("Want to be your friend");
+    const bPage = await get("/people", b.cookie);
+    expect(bPage).toContain("Waiting for you");
     expect(bPage).toContain(`@${a.username}`);
-    expect(bPage).toContain("Friends <span class=\"count\">(1)</span>");
+    expect(bPage).toContain("People <span class=\"count\">(1)</span>");
 
     const id = await idOf(b.cookie, a.username);
     expect((await post(`/friends/${id}/accept`, {}, b.cookie)).status).toBe(303);
-    expect(await get("/friends", a.cookie)).toContain(`@${b.username}`);
-    expect(await get("/friends", b.cookie)).not.toContain("Want to be your friend");
+    expect(await get("/people", a.cookie)).toContain(`@${b.username}`);
+    expect(await get("/people", b.cookie)).not.toContain("Waiting for you");
   });
 
   it("says plainly when there's no such username, and won't add yourself", async () => {
@@ -885,8 +885,8 @@ describe("friends: both ways, and only you see yours", () => {
     const b = await person();
     expect((await ask(a.cookie, b.username)).status).toBe(303);
     const both = await ask(b.cookie, a.username);
-    expect(both.headers.get("location")).toBe("/friends?done=friends");
-    expect(await get("/friends", a.cookie)).toContain(`@${b.username}`);
+    expect(both.headers.get("location")).toBe("/people?done=friends#friends");
+    expect(await get("/people", a.cookie)).toContain(`@${b.username}`);
   });
 
   it("declines quietly, and won't let the same person ask again within a week", async () => {
@@ -896,7 +896,7 @@ describe("friends: both ways, and only you see yours", () => {
     const id = await idOf(b.cookie, a.username);
     expect((await post(`/friends/${id}/decline`, {}, b.cookie)).status).toBe(303);
 
-    const aPage = await get("/friends", a.cookie);
+    const aPage = await get("/people", a.cookie);
     expect(aPage).not.toContain(`@${b.username}`);
     expect(aPage.toLowerCase()).not.toContain("declined");
     expect((await ask(a.cookie, b.username)).status).toBe(429);
@@ -908,8 +908,8 @@ describe("friends: both ways, and only you see yours", () => {
     await befriend(a, b, a.username);
     const id = await idOf(a.cookie, b.username);
     expect((await post(`/friends/${id}/remove`, {}, a.cookie)).status).toBe(303);
-    expect(await get("/friends", a.cookie)).not.toContain(`@${b.username}`);
-    expect(await get("/friends", b.cookie)).not.toContain(`@${a.username}`);
+    expect(await get("/people", a.cookie)).not.toContain(`@${b.username}`);
+    expect(await get("/people", b.cookie)).not.toContain(`@${a.username}`);
   });
 
   it("never shows anyone else's friends", async () => {
@@ -918,7 +918,7 @@ describe("friends: both ways, and only you see yours", () => {
     const c = await person();
     await befriend(a, b, a.username);
     // c looks everywhere it can; a's friend b appears nowhere
-    for (const path of ["/", "/friends", "/circles", "/i/coffee", "/i/running"]) {
+    for (const path of ["/", "/people", "/i/coffee", "/i/running"]) {
       const html = await get(path, c.cookie);
       expect(html).not.toContain(b.username);
       expect(html).not.toContain(b.name);
@@ -1232,14 +1232,55 @@ describe("quick notes: one tap for the moment of meeting up", () => {
   });
 });
 
+describe("people: circles and friends on one page", () => {
+  it("shows your circles, your friends and requests waiting for you together", async () => {
+    const me = await person();
+    const friend = await person();
+    const asker = await person();
+    const name = `Hall ${tag()}`;
+    await circle(me.cookie, name);
+    await befriend(me, friend, me.username);
+    expect((await ask(asker.cookie, me.username)).status).toBe(303);
+    const html = await get("/people", me.cookie);
+    expect(html).toContain(name);
+    expect(html).toContain(`@${friend.username}`);
+    expect(html).toContain("Waiting for you");
+    expect(html).toContain(`@${asker.username}`);
+    expect(html).toContain('action="/circles/code"');
+    expect(html).toContain('action="/friends"');
+  });
+
+  it("sends the old Circles and Friends pages there, so links still work", async () => {
+    const me = await person();
+    for (const [from, to] of [
+      ["/circles", "/people#circles"],
+      ["/friends", "/people#friends"],
+      ["/friends?done=sent", "/people?done=sent#friends"],
+    ]) {
+      const res = await fetch(new URL(from, baseUrl), { redirect: "manual", headers: { cookie: me.cookie } });
+      expect(res.status).toBe(303);
+      expect(res.headers.get("location")).toBe(to);
+    }
+  });
+
+  it("shows a form's error beside that form, keeping what was typed", async () => {
+    const me = await person();
+    const res = await post("/friends", { username: "no_such_person_zz" }, me.cookie);
+    expect(res.status).toBe(404);
+    const html = await res.text();
+    expect(html).toContain("<h1>People</h1>");
+    expect(html).toContain('value="no_such_person_zz"');
+  });
+});
+
 describe("signed out, the header offers only what's there", () => {
   it("shows About and Log in, not links that only lead to the login page", async () => {
     const html = await (await fetch(new URL("/", baseUrl))).text();
     const nav = /<nav class="nav"[^>]*>([\s\S]*?)<\/nav>/.exec(html)?.[1] ?? "";
     expect(nav).toContain('href="/readme/"');
     expect(nav).not.toContain('href="/i/');
-    expect(nav).not.toContain('href="/circles"');
-    expect(await get("/")).toContain('href="/circles"');
+    expect(nav).not.toContain('href="/people"');
+    expect(await get("/")).toContain('href="/people"');
   });
 });
 
@@ -1277,7 +1318,7 @@ describe("live: friend requests and circles reach the people they're about", () 
 
 // a person's own id, as the page uses it in its live topics
 async function idOfMe(p: { cookie: string }): Promise<number> {
-  const html = await get("/friends", p.cookie);
+  const html = await get("/people", p.cookie);
   const topics = /data-topics="([^"]+)"/.exec(html)?.[1] ?? "";
   return Number(/p:(\d+)/.exec(topics)?.[1]);
 }

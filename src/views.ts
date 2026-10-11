@@ -292,7 +292,7 @@ function audienceField(choices: AudienceChoices, chosen: string | undefined): st
     `<option value="${esc(value)}"${value === pick ? " selected" : ""}>${esc(label)}</option>`;
   const nobody =
     choices.circles.length === 0 && choices.friends === 0
-      ? `<p class="hint warn">Right now nobody would see this: you're not in a circle and have no friends here yet. <a href="/circles">Circles</a> · <a href="/friends">Friends</a></p>`
+      ? `<p class="hint warn">Right now nobody would see this: you're not in a circle and have no friends here yet. <a href="/people">People</a></p>`
       : "";
   return `
     <label for="audience">Who's it for?</label>
@@ -515,47 +515,6 @@ export function spacedNumber(n: string): string {
   return `${n.slice(0, 3)} ${n.slice(3)}`;
 }
 
-export function circlesPage(
-  circles: Circle[],
-  name = "",
-  error = "",
-  code: { value?: string; error?: string } = {},
-): string {
-  const list = circles.length
-    ? `<ul class="later-list circles">${circles
-        .map(
-          (c) =>
-            `<li class="later"><a href="/c/${c.id}"><b>${esc(c.name)}</b></a><span class="hint">${c.members}/${CIRCLE_MAX}</span></li>`,
-        )
-        .join("")}</ul>`
-    : `<p class="empty">You're not in any circle yet. Start one, or open an invite link someone sent you.</p>`;
-  return `
-<h1>Your circles</h1>
-<p class="lede">A circle is a group who already know each other: a class, a hall floor, a club. At most ${CIRCLE_MAX} people.</p>
-<div data-live="circles">${list}</div>
-<form method="post" action="/circles/code" id="join-code" class="inline-gap">
-  <fieldset>
-    <legend>Join with a code</legend>
-    ${code.error ? `<p class="error" role="alert">${esc(code.error)}</p>` : ""}
-    <label for="circle-code">The circle's 6-digit code</label>
-    <div class="note-form">
-      <input id="circle-code" name="code" inputmode="numeric" autocomplete="off" maxlength="7" pattern="[0-9 ]{6,7}" required value="${esc(code.value ?? "")}" placeholder="e.g. 482 917" class="code-input">
-      <button type="submit">Join</button>
-    </div>
-    <p class="hint">Ask someone in the circle for it. You'll see the circle's name before you join.</p>
-  </fieldset>
-</form>
-<form method="post" action="/circles" class="inline-gap" id="new-circle">
-  <fieldset>
-    <legend>Start a circle</legend>
-    ${error ? `<p class="error" role="alert">${esc(error)}</p>` : ""}
-    <label for="circle-name">Name</label>
-    <input id="circle-name" name="name" maxlength="40" required value="${esc(name)}" placeholder="e.g. COMP4020, Bruce Hall 3F">
-    <button type="submit">Start it</button>
-  </fieldset>
-</form>`;
-}
-
 export function circlePage(
   c: Circle,
   members: { id: number; name: string }[],
@@ -564,7 +523,7 @@ export function circlePage(
 ): string {
   const owner = c.owner_id === me.id;
   return `
-<p><a href="/circles">← Your circles</a></p>
+<p><a href="/people#circles">← Your circles</a></p>
 <h1>${esc(c.name)}</h1>
 <div data-live="circle">
 <p class="lede">${c.members} of ${CIRCLE_MAX} people${owner ? " · you started this one" : ""}</p>
@@ -599,7 +558,7 @@ ${
     ? `<p class="error">This circle is full.</p>`
     : `<form method="post" action="/join/${esc(code)}"><button>Join ${esc(c.name)}</button></form>`
 }
-<p><a href="/circles">Not now</a></p>`;
+<p><a href="/people#circles">Not now</a></p>`;
 }
 
 // ---- Friends (decision 4, step 3) ----
@@ -613,47 +572,102 @@ function smallForm(action: string, label: string, quiet = true): string {
   return `<form class="inline" method="post" action="${action}"><button${quiet ? ' class="quiet"' : ""}>${label}</button></form>`;
 }
 
-export function friendsPage(
+// ---- People: circles and friends on one page ----
+// Both answer one question, who sees your meetups, so they live together.
+// Only ever rendered for the person whose circles and friends these are.
+
+export interface PeopleForms {
+  note?: string;
+  circleName?: string;
+  circleError?: string;
+  code?: { value?: string; error?: string };
+  username?: string;
+  friendError?: string;
+}
+
+export function peoplePage(
+  circles: Circle[],
   friends: Someone[],
   incoming: Someone[],
   outgoing: Someone[],
-  opts: { username?: string; error?: string; note?: string } = {},
+  f: PeopleForms = {},
 ): string {
   const asking = incoming.length
-    ? `<h2>Want to be your friend</h2><ul class="later-list">${incoming
+    ? `<section class="waiting"><h2>Waiting for you</h2><ul class="later-list">${incoming
         .map((p) =>
           someoneRow(p, smallForm(`/friends/${p.id}/accept`, "Accept", false) + " " + smallForm(`/friends/${p.id}/decline`, "Decline")),
         )
-        .join("")}</ul>`
+        .join("")}</ul></section>`
     : "";
+  const circleList = circles.length
+    ? `<ul class="later-list circles">${circles
+        .map(
+          (c) =>
+            `<li class="later"><a href="/c/${c.id}"><b>${esc(c.name)}</b></a><span class="hint">${c.members}/${CIRCLE_MAX}</span></li>`,
+        )
+        .join("")}</ul>`
+    : `<p class="empty">You're not in any circle yet. Join one with a code, or start one.</p>`;
   const sent = outgoing.length
-    ? `<h2>Waiting on</h2><ul class="later-list">${outgoing
+    ? `<h3>Waiting on</h3><ul class="later-list">${outgoing
         .map((p) => someoneRow(p, smallForm(`/friends/${p.id}/cancel`, "Take it back")))
         .join("")}</ul>`
     : "";
-  const mine = friends.length
+  const friendList = friends.length
     ? `<ul class="later-list">${friends
         .map((p) => someoneRow(p, smallForm(`/friends/${p.id}/remove`, "Remove")))
         .join("")}</ul>`
     : `<p class="empty">No friends here yet. Ask someone for their username.</p>`;
+  const code = f.code ?? {};
   return `
-<h1>Friends</h1>
-<p class="lede">Meetups you share with "my friends" go to these people, and no one else. Only you can see this list.</p>
-${opts.note ? `<p class="banner" role="status">${esc(opts.note)}</p>` : ""}
+<h1>People</h1>
+<p class="lede">Your meetups go to a circle you're in, or to your friends. No one else.</p>
+<p class="jump"><a href="#circles">Circles</a><a href="#friends">Friends</a></p>
+${f.note ? `<p class="banner" role="status">${esc(f.note)}</p>` : ""}
+<div data-live="requests">${asking}</div>
+<div class="people-grid">
+<section id="circles">
+<h2>Circles</h2>
+<p class="hint">A group who already know each other: a class, a hall floor, a club. At most ${CIRCLE_MAX} people.</p>
+<div data-live="circles">${circleList}</div>
+<form method="post" action="/circles/code" id="join-code" class="inline-gap">
+  <fieldset>
+    <legend>Join with a code</legend>
+    ${code.error ? `<p class="error" role="alert">${esc(code.error)}</p>` : ""}
+    <label for="circle-code">The circle's 6-digit code</label>
+    <div class="note-form">
+      <input id="circle-code" name="code" inputmode="numeric" autocomplete="off" maxlength="7" pattern="[0-9 ]{6,7}" required value="${esc(code.value ?? "")}" placeholder="e.g. 482 917" class="code-input">
+      <button type="submit">Join</button>
+    </div>
+    <p class="hint">Ask someone in the circle for it. You'll see the circle's name before you join.</p>
+  </fieldset>
+</form>
+<form method="post" action="/circles" class="inline-gap" id="new-circle">
+  <fieldset>
+    <legend>Start a circle</legend>
+    ${f.circleError ? `<p class="error" role="alert">${esc(f.circleError)}</p>` : ""}
+    <label for="circle-name">Name</label>
+    <input id="circle-name" name="name" maxlength="40" required value="${esc(f.circleName ?? "")}" placeholder="e.g. COMP4020, Bruce Hall 3F">
+    <button type="submit">Start it</button>
+  </fieldset>
+</form>
+</section>
+<section id="friends">
+<h2>Friends</h2>
+<p class="hint">Meetups for "my friends" go to these people. Only you can see this list.</p>
+<div data-live="friends">
+${friendList}
+${sent}
+</div>
 <form method="post" action="/friends" id="add-friend" class="inline-gap">
   <fieldset>
     <legend>Add a friend</legend>
-    ${opts.error ? `<p class="error" role="alert">${esc(opts.error)}</p>` : ""}
+    ${f.friendError ? `<p class="error" role="alert">${esc(f.friendError)}</p>` : ""}
     <label for="friend-username">Their username</label>
-    <input id="friend-username" name="username" autocapitalize="none" required value="${esc(opts.username ?? "")}" placeholder="e.g. escaped_anu">
+    <input id="friend-username" name="username" autocapitalize="none" required value="${esc(f.username ?? "")}" placeholder="e.g. escaped_anu">
     <p class="hint">Exact username only. There's no search, so ask them for it.</p>
     <button type="submit">Send request</button>
   </fieldset>
 </form>
-<div data-live="friends">
-${asking}
-${sent}
-<h2>Your friends</h2>
-${mine}
+</section>
 </div>`;
 }
