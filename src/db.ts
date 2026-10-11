@@ -6,6 +6,7 @@ import { randomBytes, randomInt } from "node:crypto";
 // One SQLite file on the Fly volume. Nothing that matters lives in memory, so
 // a restart or redeploy loses nothing.
 const dataDir = process.env.DATA_DIR ?? "./data";
+export const NAME_MAX = 24;
 mkdirSync(dataDir, { recursive: true });
 export const db = new DatabaseSync(joinPath(dataDir, "buddyup.db"));
 
@@ -105,6 +106,41 @@ db.exec(`
   }
 }
 
+// Display names are unique, ignoring case, and never change, so a name on a
+// meetup is always the same person. Anyone who already shared a name keeps it
+// if they signed up first; later ones become "Leah 2", "Leah 3". Done once.
+{
+  const { user_version } = db.prepare("PRAGMA user_version").get() as { user_version: number };
+  if (user_version < 2) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const rows = db.prepare("SELECT id, name FROM people ORDER BY id").all() as { id: number; name: string }[];
+      const taken = new Set(rows.map((r) => r.name.toLowerCase()));
+      const seen = new Set<string>();
+      const rename = db.prepare("UPDATE people SET name = ? WHERE id = ?");
+      for (const r of rows) {
+        const key = r.name.toLowerCase();
+        if (!seen.has(key)) { seen.add(key); continue; }
+        let n = 2;
+        let next = "";
+        do {
+          const suffix = ` ${n++}`;
+          next = r.name.slice(0, NAME_MAX - suffix.length) + suffix;
+        } while (taken.has(next.toLowerCase()));
+        taken.add(next.toLowerCase());
+        seen.add(next.toLowerCase());
+        rename.run(next, r.id);
+      }
+      db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS people_by_name ON people (name COLLATE NOCASE);
+        PRAGMA user_version = 2;`);
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    }
+  }
+}
+
 export interface Person {
   id: number;
   username: string;
@@ -172,7 +208,7 @@ const q = {
     "SELECT COUNT(*) AS n, MAX(at) AS last FROM login_failures WHERE username = ? AND at > ?",
   ),
   clearFailures: db.prepare("DELETE FROM login_failures WHERE username = ?"),
-  renamePerson: db.prepare("UPDATE people SET name = ? WHERE id = ?"),
+  nameTaken: db.prepare("SELECT 1 FROM people WHERE name = ? COLLATE NOCASE"),
   meetup: db.prepare(
     `SELECT ${meetupCols} FROM meetups m JOIN people h ON h.id = m.host_id WHERE m.id = ?`,
   ),
@@ -277,8 +313,8 @@ export function clearFailures(username: string): void {
   q.clearFailures.run(username);
 }
 
-export function renamePerson(id: number, name: string): void {
-  q.renamePerson.run(name, id);
+export function nameTaken(name: string): boolean {
+  return q.nameTaken.get(name) !== undefined;
 }
 
 // Any meetup by id, whoever is asking. Only for code that has already

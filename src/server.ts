@@ -212,7 +212,11 @@ async function handle(
     let person: db.Person | null = null;
     if (!error) {
       person = db.createAccount(username, name, await auth.hashPassword(password));
-      if (!person) error = "That username is taken. Try another.";
+      // both are unique; say which one clashed (names ignore case)
+      if (!person)
+        error = db.nameTaken(name)
+          ? "Someone already goes by that name. Try another, maybe with an initial."
+          : "That username is taken. Try another.";
     }
     if (error || !person)
       return send(res, 400, page({ title: "Make an account", who, body: views.signupForm(next, values, error) }));
@@ -404,19 +408,6 @@ async function handle(
     else db.removeFriend(me.id, other);
     tellPerson(other, me.id);
     return redirect(res, "/friends");
-  }
-
-  if (method === "GET" && path === "/me") {
-    return send(res, 200, page({ title: "Display name", who, body: views.nameForm(me.name) }));
-  }
-
-  if (method === "POST" && path === "/me") {
-    const f = await form(req);
-    const name = clean(f.get("name"), 24);
-    if (!name)
-      return send(res, 400, page({ title: "Display name", who, body: views.nameForm("", "A display name needs at least one character.") }));
-    db.renamePerson(me.id, name);
-    return redirect(res, "/");
   }
 
   if ((m = /^\/i\/([a-z]+)$/.exec(path)) && method === "GET") {

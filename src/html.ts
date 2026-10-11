@@ -323,7 +323,7 @@ export function page(opts: {
     ? `${INTERESTS.map((i) => `<a href="/i/${i.slug}">${esc(i.name)}</a>`).join("")}<a href="/circles">Circles</a><a href="/friends">${requests ? `Friends <span class="count">(${requests})</span>` : "Friends"}</a>`
     : "";
   const who = opts.who
-    ? `<span class="who">${opts.topics?.length ? `<span class="live-dot" title="Live"></span>` : ""}Hey <b>${esc(opts.who.name)}</b> · <a href="/me">change</a> · <form class="inline" method="post" action="/logout"><button class="link">Log out</button></form></span>`
+    ? `<span class="who">${opts.topics?.length ? `<span class="live-dot" title="Live"></span>` : ""}Hey <b>${esc(opts.who.name)}</b> · <form class="inline" method="post" action="/logout"><button class="link">Log out</button></form></span>`
     : `<span class="who"><a href="/login">Log in</a></span>`;
   const style = opts.colour ? ` style="--c:${esc(opts.colour)}"` : "";
   const live = opts.topics?.length

@@ -25,21 +25,6 @@ function where(place: string, meetingPoint: string, cls = "place"): string {
   }`;
 }
 
-// Changing how you appear; the username you sign in with doesn't change.
-export function nameForm(current: string, error = ""): string {
-  return `
-<form method="post" action="/me">
-  <fieldset>
-    <legend>Change your display name</legend>
-    ${error ? `<p class="error" role="alert">${esc(error)}</p>` : ""}
-    <label for="name">Display name</label>
-    <input id="name" name="name" maxlength="24" required value="${esc(current)}" placeholder="e.g. Escaped ANU">
-    <p class="hint">People going to the same meetup see this name.</p>
-    <button type="submit">Save</button>
-  </fieldset>
-</form>`;
-}
-
 export interface AuthValues {
   username?: string;
   name?: string;
@@ -74,6 +59,7 @@ export function signupForm(next: string, values: AuthValues = {}, error = ""): s
     <p class="hint">3 to 20 lowercase letters, numbers or _. Friends find you by this.</p>
     <label for="name">Display name</label>
     <input id="name" name="name" maxlength="24" required value="${esc(values.name ?? "")}" placeholder="e.g. Escaped ANU">
+    <p class="hint">What people going with you see. No one else can have it, and it can't be changed later.</p>
     <label for="password">Password</label>
     <input id="password" name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="200">
     <p class="hint">At least 8 characters. There's no email and no reset, so keep it somewhere safe.</p>

@@ -36,6 +36,8 @@ joined as one circle from a code on screen.
 - **Direct messages:** the point is to meet; notes are per meetup.
 - **Profiles, followers, likes, ratings:** no auditions.
 - **Search, maps, recommendations:** a list by time is enough.
+- **Changing your name:** one name per person, for good, so a name on a
+  meetup is always the same person.
 - **Public friend lists or counts:** your friends are visible only to you.
 
 Crit 8 excluded accounts and friend lists, until a pod member noted that
@@ -59,6 +61,7 @@ Tested in `spec/` against the running app:
 - a circle refuses a 26th member
 - a wrong circle code is refused, and ten wrong tries lock you out for 15
   minutes; resetting changes both the code and the link
+- no two people share a display name, ignoring case, and names can't change
 - passwords are never stored as typed
 - a meetup missing time, place or head count, past, or over a week out is
   refused
@@ -91,4 +94,5 @@ Only judged:
 ## Status
 
 Built through crit 9: live meetups for circles and friends, notes and
-check-in. Since then: circles joinable by a 6-digit code.
+check-in. Since then: circles joinable by a 6-digit code, and unique
+display names.

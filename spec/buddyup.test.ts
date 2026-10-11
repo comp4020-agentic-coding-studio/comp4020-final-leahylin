@@ -37,7 +37,7 @@ async function person(
 // that don't care who is looking share one bystander.
 let bystander: Promise<string> | null = null;
 function anyone(): Promise<string> {
-  bystander ??= person("bystander").then((p) => p.cookie);
+  bystander ??= person(`bystander-${tag()}`).then((p) => p.cookie);
   return bystander;
 }
 
@@ -586,6 +586,27 @@ describe("safety", () => {
 });
 
 describe("accounts: only people who signed in, as themselves", () => {
+  it("gives each display name to one person only, ignoring case", async () => {
+    const first = await person(`Sam ${tag()}`);
+    const res = await post("/signup", {
+      username: `t_${tag()}${tag()}`.slice(0, 20),
+      name: first.name.toUpperCase(),
+      password: PASSWORD,
+      next: "/",
+    });
+    expect(res.status).toBe(400);
+    expect(res.headers.get("set-cookie")).toBe(null);
+    expect(await res.text()).toContain("Someone already goes by that name");
+  });
+
+  it("never lets a display name change", async () => {
+    const p = await person();
+    expect(await get("/", p.cookie)).not.toContain('href="/me"');
+    const res = await post("/me", { name: `Other ${tag()}` }, p.cookie);
+    expect(res.status).toBe(404);
+    expect(await get("/", p.cookie)).toContain(p.name);
+  });
+
   it("shows a signed-out visitor nothing but the way in", async () => {
     const hostP = await person();
     const place = `Hidden Lawn ${tag()}`;
@@ -897,7 +918,7 @@ describe("friends: both ways, and only you see yours", () => {
     const c = await person();
     await befriend(a, b, a.username);
     // c looks everywhere it can; a's friend b appears nowhere
-    for (const path of ["/", "/friends", "/circles", "/i/coffee", "/i/running", "/me"]) {
+    for (const path of ["/", "/friends", "/circles", "/i/coffee", "/i/running"]) {
       const html = await get(path, c.cookie);
       expect(html).not.toContain(b.username);
       expect(html).not.toContain(b.name);

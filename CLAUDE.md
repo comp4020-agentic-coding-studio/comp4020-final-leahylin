@@ -32,6 +32,9 @@ around a rule; argue for changing the README first.
   the same transaction as the insert, like the head count.
 - **Never store a password as typed.** Hash it with `scrypt` and a per-user
   salt, compare in constant time, and never log it or echo it back.
+- **Display names are unique (ignoring case) and never change.** A name on
+  a meetup is always the same person. A unique index in `src/db.ts` enforces
+  it, not just the form, and there is no rename route.
 - **Never make friend lists public.** No one sees another person's friends or
   a count of them.
 - **Never add emails, DMs, public profiles, followers, likes, ratings, or a
