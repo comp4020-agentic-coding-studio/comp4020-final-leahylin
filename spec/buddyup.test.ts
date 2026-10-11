@@ -1158,3 +1158,42 @@ describe("signed out, the header offers only what's there", () => {
     expect(await get("/")).toContain('href="/circles"');
   });
 });
+
+describe("live: friend requests and circles reach the people they're about", () => {
+  it("tells the person asked, straight away, and no one else", async () => {
+    const a = await person();
+    const b = await person();
+    const c = await person();
+    const bWatch = await listen(`p:${(await idOfMe(b))}`, b.cookie);
+    const cWatch = await listen(`p:${(await idOfMe(c))}`, c.cookie);
+    expect((await ask(a.cookie, b.username)).status).toBe(303);
+    expect(await bWatch.next()).toContain("event: change");
+    expect(await cWatch.next(1200)).toBe(null);
+  });
+
+  it("won't let anyone watch someone else's requests", async () => {
+    const b = await person();
+    const snoop = await person();
+    const peek = await listen(`p:${(await idOfMe(b))}`, snoop.cookie);
+    expect(await peek.res.text()).toContain("retry:");
+  });
+
+  it("tells a circle's members when someone joins, and no one outside", async () => {
+    const owner = await person();
+    const outsider = await person();
+    const cid = await circle(owner.cookie);
+    const inside = await listen(`c:${cid}`, owner.cookie);
+    const peek = await listen(`c:${cid}`, outsider.cookie);
+    expect(await peek.res.text()).toContain("retry:");
+    const joiner = await person();
+    expect((await joinCircle(joiner.cookie, await inviteCode(owner.cookie, cid))).status).toBe(303);
+    expect(await inside.next()).toContain("event: change");
+  });
+});
+
+// a person's own id, as the page uses it in its live topics
+async function idOfMe(p: { cookie: string }): Promise<number> {
+  const html = await get("/friends", p.cookie);
+  const topics = /data-topics="([^"]+)"/.exec(html)?.[1] ?? "";
+  return Number(/p:(\d+)/.exec(topics)?.[1]);
+}

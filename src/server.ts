@@ -101,6 +101,15 @@ function touched(m: { id: number; interest: string }): string[] {
   return [`m:${m.id}`, `i:${m.interest}`];
 }
 
+// Someone's own pages (friend requests, the nav count, their circles list),
+// and a circle's member list. Each reaches only the person, or the members.
+function tellPerson(...ids: number[]): void {
+  for (const id of ids) events.publish([`p:${id}`], (pid) => pid === id);
+}
+function tellCircle(circleId: number): void {
+  events.publish([`c:${circleId}`], (pid) => pid !== null && db.isCircleMember(circleId, pid));
+}
+
 // Tell the pages watching a meetup that it changed, but only the people who
 // can see it (decision 4).
 function announce(m: { id: number; interest: string }): void {
@@ -134,10 +143,15 @@ async function handle(
   // than useless here.
   if (method === "GET" && path === "/events") {
     const topics = events.parseTopics(url.searchParams.get("topics"));
-    // no watching a meetup you can't see
+    // no watching a meetup you can't see, another person's requests, or a
+    // circle you're not in
     if (me)
-      for (const t of [...topics])
-        if (t.startsWith("m:") && !db.canSee(Number(t.slice(2)), me.id)) topics.delete(t);
+      for (const t of [...topics]) {
+        const id = Number(t.slice(2));
+        if (t.startsWith("m:") && !db.canSee(id, me.id)) topics.delete(t);
+        if (t.startsWith("p:") && id !== me.id) topics.delete(t);
+        if (t.startsWith("c:") && !db.isCircleMember(id, me.id)) topics.delete(t);
+      }
     if (
       topics.size === 0 ||
       !me ||
@@ -157,7 +171,7 @@ async function handle(
         who,
         // the counts for every interest, plus whatever you're going to
         topics: me
-          ? [...INTERESTS.map((i) => `i:${i.slug}`), ...mine.map((m) => `m:${m.id}`)]
+          ? [...INTERESTS.map((i) => `i:${i.slug}`), ...mine.map((m) => `m:${m.id}`), `p:${me.id}`]
           : undefined,
         body: views.home(me, me ? db.upcomingCounts(now, me.id) : {}, mine, db.attendees, now),
       }),
@@ -248,7 +262,10 @@ async function handle(
 
   // ---- Circles (decision 4, step 2) ----
   if (path === "/circles" && method === "GET") {
-    return send(res, 200, page({ title: "Circles · Buddy Up", who, body: views.circlesPage(db.myCircles(me.id)) }));
+    const circles = db.myCircles(me.id);
+    return send(res, 200, page({ title: "Circles · Buddy Up", who,
+      topics: [`p:${me.id}`, ...circles.map((c) => `c:${c.id}`)],
+      body: views.circlesPage(circles) }));
   }
 
   if (path === "/circles" && method === "POST") {
@@ -266,6 +283,7 @@ async function handle(
     const proto = req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
     const link = `${proto}://${req.headers.host ?? "localhost"}/join/${circle.invite_code}`;
     return send(res, 200, page({ title: `${circle.name} · Buddy Up`, who,
+      topics: [`c:${circle.id}`, `p:${me.id}`],
       body: views.circlePage(circle, db.circleMembers(circle.id), me, link) }));
   }
 
@@ -274,11 +292,14 @@ async function handle(
     if (!db.circleForMember(id, me.id)) return notFound(res, who);
     if (m[2] === "leave") {
       db.leaveCircle(id, me.id);
+      tellCircle(id);
+      tellPerson(me.id);
       return redirect(res, "/circles");
     }
     if (!db.resetInvite(id, me.id))
       return send(res, 403, page({ title: "Not yours", who,
         body: views.message("Only the person who started it", "Only the circle's owner can reset its link.", `/c/${id}`) }));
+    tellCircle(id);
     return redirect(res, `/c/${id}`);
   }
 
@@ -299,6 +320,10 @@ async function handle(
       if (joined.result === "full")
         return send(res, 409, page({ title: "Full", who,
           body: views.message("This circle is full", `A circle holds at most ${db.CIRCLE_MAX} people, so everyone in it can know each other.`, "/circles") }));
+      if (joined.result === "joined") {
+        tellCircle(joined.id);
+        tellPerson(me.id);
+      }
       return redirect(res, `/c/${joined.id}`);
     }
   }
@@ -311,6 +336,7 @@ async function handle(
       friends: "You're friends now.",
     };
     return send(res, 200, page({ title: "Friends · Buddy Up", who,
+      topics: [`p:${me.id}`],
       body: views.friendsPage(db.friendsOf(me.id), db.incomingRequests(me.id), db.outgoingRequests(me.id),
         { note: done ? notes[done] : undefined }) }));
   }
@@ -336,19 +362,26 @@ async function handle(
         return show(429, `You asked ${asked.who.name} recently. You can ask again in ${days} day${days === 1 ? "" : "s"}.`);
       }
       case "became_friends":
+        tellPerson(asked.who.id, me.id);
         return redirect(res, "/friends?done=friends");
       case "sent":
+        tellPerson(asked.who.id, me.id);
         return redirect(res, "/friends?done=sent");
     }
   }
 
   if ((m = /^\/friends\/(\d+)\/(accept|decline|cancel|remove)$/.exec(path)) && method === "POST") {
     const other = Number(m[1]);
+    // both people's pages move; neither gets a message, as before
     if (m[2] === "accept") {
-      if (db.acceptFriend(me.id, other, now)) return redirect(res, "/friends?done=friends");
+      if (db.acceptFriend(me.id, other, now)) {
+        tellPerson(other, me.id);
+        return redirect(res, "/friends?done=friends");
+      }
     } else if (m[2] === "decline") db.declineFriend(me.id, other);
     else if (m[2] === "cancel") db.cancelFriendRequest(me.id, other);
     else db.removeFriend(me.id, other);
+    tellPerson(other, me.id);
     return redirect(res, "/friends");
   }
 
@@ -388,7 +421,7 @@ async function handle(
         title: `${interest.name} · Buddy Up`,
         who,
         colour: interest.colour,
-        topics: [`i:${interest.slug}`],
+        topics: [`i:${interest.slug}`, `p:${me.id}`],
         body,
       }),
     );
@@ -472,7 +505,7 @@ async function handle(
         title: `${interest.name} · Buddy Up`,
         who,
         colour: interest.colour,
-        topics: [`m:${meetup.id}`],
+        topics: [`m:${meetup.id}`, `p:${me.id}`],
         body,
       }),
     );

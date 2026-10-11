@@ -343,7 +343,7 @@ export function page(opts: {
 <style>${CSS}</style>
 </head>
 <body${style}${live}>
-<header class="site"><div class="bar${opts.who ? "" : " out"}"><a class="brand" href="/">Buddy Up</a><nav class="nav" aria-label="Main">${nav}<a href="/readme/">About</a></nav>${who}</div></header>
+<header class="site"><div class="bar${opts.who ? "" : " out"}"><a class="brand" href="/">Buddy Up</a><nav class="nav" aria-label="Main" data-live="nav">${nav}<a href="/readme/">About</a></nav>${who}</div></header>
 <main class="wrap">
 ${opts.body}
 </main>

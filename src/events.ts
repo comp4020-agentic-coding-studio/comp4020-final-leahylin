@@ -41,7 +41,11 @@ const RETRY_MS = 60_000;
 // filter: it decides what you are told changed, never what you may see. The
 // page you then fetch is authorised by your cookie like any other request, so
 // subscribing to someone else's topic reveals nothing a plain GET wouldn't.
-const TOPIC = /^(i:[a-z]{1,24}|m:[0-9]{1,9})$/;
+// p:<person> is one person's own page furniture (friend requests, the
+// friends count, their circles) and c:<circle> a circle's member list. Both
+// are only ever subscribed by the person or a member: the server drops any
+// other before subscribing (server.ts, /events).
+const TOPIC = /^(i:[a-z]{1,24}|[mpc]:[0-9]{1,9})$/;
 const MAX_TOPICS = 24;
 
 export function parseTopics(raw: string | null): Set<string> {

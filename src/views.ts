@@ -536,7 +536,7 @@ export function circlesPage(circles: Circle[], name = "", error = ""): string {
   return `
 <h1>Your circles</h1>
 <p class="lede">A circle is a group who already know each other: a class, a hall floor, a club. At most ${CIRCLE_MAX} people.</p>
-${list}
+<div data-live="circles">${list}</div>
 <form method="post" action="/circles" class="inline-gap" id="new-circle">
   <fieldset>
     <legend>Start a circle</legend>
@@ -558,6 +558,7 @@ export function circlePage(
   return `
 <p><a href="/circles">← Your circles</a></p>
 <h1>${esc(c.name)}</h1>
+<div data-live="circle">
 <p class="lede">${c.members} of ${CIRCLE_MAX} people${owner ? " · you started this one" : ""}</p>
 <h2>Invite someone you know</h2>
 <p class="hint">Anyone with this link can join while there's room. Only send it to people you'd be glad to meet.</p>
@@ -572,6 +573,7 @@ ${
 <ul class="people">${members
     .map((m) => `<li>${esc(m.name)}${m.id === c.owner_id ? " (started it)" : ""}</li>`)
     .join("")}</ul>
+</div>
 <form method="post" action="/c/${c.id}/leave" class="inline-gap"><button class="quiet">Leave this circle</button></form>`;
 }
 
@@ -638,8 +640,10 @@ ${opts.note ? `<p class="banner" role="status">${esc(opts.note)}</p>` : ""}
     <button type="submit">Send request</button>
   </fieldset>
 </form>
+<div data-live="friends">
 ${asking}
 ${sent}
 <h2>Your friends</h2>
-${mine}`;
+${mine}
+</div>`;
 }
