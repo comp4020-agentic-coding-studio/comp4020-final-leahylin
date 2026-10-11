@@ -62,12 +62,17 @@ that script may enhance a page but never be required.
   The client closes its stream ~30s after a tab is hidden, and stops reconnecting
   after a long idle stretch, which is what keeps this from meaning "awake
   always" — but a forgotten open tab does cost money in a way crit 8 didn't.
-- **Open: Fly's per-machine concurrency limit is unverified.** Long-lived
-  streams count against it for their whole life, and with one machine and no HA
-  there is nowhere to overflow — past the limit the proxy fails *page loads*,
-  not just streams. The app's own cap is set to 60 to stay well clear, but the
-  real limit should be checked and set explicitly in `fly.toml` before this is
-  deployed under any real load.
+- **Fly's concurrency limit is now set, because the default was wrong for
+  this.** Long-lived streams count against the proxy's limit for their whole
+  life, and with one machine and no HA there is nowhere to overflow — past it
+  the proxy fails *page loads*, not just streams. Checked rather than assumed:
+  unset, the default counts **connections** with a **soft limit of 20**, while
+  `src/events.ts` allows 60 streams on its own. The app's cap was three times
+  the proxy's, so the proxy would always have given out first. `fly.toml` now
+  counts requests (an idle keep-alive socket costs nothing, an open stream
+  costs one) with limits of 80 and 120, both above the app's 60 — so the cap
+  that bites is the one that turns a client away in a way the browser recovers
+  from.
 - **A shut-down is now graceful.** Killed outright, every stream is a severed
   socket and every client reconnects within seconds, waking the machine back up
   — the stop undone by the thing it just killed. SIGTERM now closes streams with

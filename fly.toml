@@ -35,6 +35,21 @@ auto_stop_machines = "stop"
 auto_start_machines = true
 min_machines_running = 0
 
+# Live updates hold a request open for minutes, which the proxy's defaults
+# don't suit: unset, it counts *connections* against a soft limit of 20, and
+# src/events.ts allows 60 streams on its own. Past the soft limit the proxy
+# treats the machine as full, and with one machine there is nowhere to send
+# the overflow — it's plain page loads that suffer, not just streams.
+#
+# Counting requests instead means an idle keep-alive socket costs nothing and
+# an open stream costs exactly one. Both limits sit above the app's own cap of
+# 60, so that cap is what bites first — which is the point: it turns a
+# connection away in a way the browser recovers from, where the proxy wouldn't.
+[http_service.concurrency]
+type = "requests"
+soft_limit = 80
+hard_limit = 120
+
 [[vm]]
 size = "shared-cpu-1x"
 memory = "256mb"
