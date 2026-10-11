@@ -305,10 +305,13 @@ const LIVE_JS = `
   }
 
   // Everyone watching hears the same event in the same instant; without a
-  // spread they all re-render on one shared vCPU at once.
+  // spread they all re-render on one shared vCPU at once. The spread is
+  // budgeted, though: crit 9 asks for a change to land in about a second, and
+  // the rest of the path (signal ~20ms, re-fetch up to ~430ms, swap) leaves
+  // roughly half a second for this. 500ms still de-synchronises a pod.
   function soon() {
     clearTimeout(pending);
-    pending = setTimeout(refresh, 150 + Math.random() * 1200);
+    pending = setTimeout(refresh, 60 + Math.random() * 440);
   }
 
   function close() { if (src) { src.close(); src = null; } }
