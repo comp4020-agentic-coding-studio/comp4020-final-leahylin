@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join as joinPath } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 
 // One SQLite file on the Fly volume. Nothing that matters lives in memory, so
 // a restart or redeploy loses nothing.
@@ -462,6 +462,13 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS circle_members_by_person ON circle_members (person_id);
 `);
 
+// A 6-digit number to type in, beside the link: easy to read off a screen or
+// say out loud. It's short, so guessing is held back per person (below).
+addColumn("circles", "join_number", "TEXT");
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS circles_by_number ON circles (join_number) WHERE join_number IS NOT NULL;
+  CREATE TABLE IF NOT EXISTS circle_code_failures (person_id INTEGER NOT NULL, at INTEGER NOT NULL);
+  CREATE INDEX IF NOT EXISTS circle_code_failures_by_person ON circle_code_failures (person_id, at);`);
+
 export const CIRCLE_MAX = 25;
 
 export interface Circle {
@@ -469,10 +476,11 @@ export interface Circle {
   name: string;
   owner_id: number;
   invite_code: string;
+  join_number: string;
   members: number;
 }
 
-const circleCols = `c.id, c.name, c.owner_id, c.invite_code,
+const circleCols = `c.id, c.name, c.owner_id, c.invite_code, c.join_number,
   (SELECT COUNT(*) FROM circle_members cm WHERE cm.circle_id = c.id) AS members`;
 
 const cq = {
@@ -500,7 +508,15 @@ const cq = {
   removeMember: db.prepare("DELETE FROM circle_members WHERE circle_id = ? AND person_id = ?"),
   setOwner: db.prepare("UPDATE circles SET owner_id = ? WHERE id = ?"),
   remove: db.prepare("DELETE FROM circles WHERE id = ?"),
-  setCode: db.prepare("UPDATE circles SET invite_code = ? WHERE id = ?"),
+  setCode: db.prepare("UPDATE circles SET invite_code = ?, join_number = ? WHERE id = ?"),
+  setNumber: db.prepare("UPDATE circles SET join_number = ? WHERE id = ?"),
+  numberTaken: db.prepare("SELECT 1 FROM circles WHERE join_number = ?"),
+  byNumber: db.prepare(`SELECT ${circleCols} FROM circles c WHERE c.join_number = ?`),
+  noNumber: db.prepare("SELECT id FROM circles WHERE join_number IS NULL"),
+  recordCodeFailure: db.prepare("INSERT INTO circle_code_failures (person_id, at) VALUES (?, ?)"),
+  codeFailures: db.prepare(
+    "SELECT COUNT(*) AS n, MAX(at) AS last FROM circle_code_failures WHERE person_id = ? AND at > ?",
+  ),
 };
 
 // 12 characters from 9 random bytes: not guessable, short enough to read off
@@ -509,13 +525,43 @@ function inviteCode(): string {
   return randomBytes(9).toString("base64url");
 }
 
+// six digits, never one another circle already has
+function joinNumber(): string {
+  for (;;) {
+    const n = String(randomInt(0, 1_000_000)).padStart(6, "0");
+    if (cq.numberTaken.get(n) === undefined) return n;
+  }
+}
+
+// circles made before numbers existed get one at boot
+for (const { id } of cq.noNumber.all() as { id: number }[]) cq.setNumber.run(joinNumber(), id);
+
 export function createCircle(name: string, ownerId: number): number {
   return tx(() => {
     const now = Date.now();
     const { id } = cq.insert.get(name, ownerId, inviteCode(), now) as { id: number };
+    cq.setNumber.run(joinNumber(), id);
     cq.addMember.run(id, ownerId, now);
     return id;
   });
+}
+
+export function circleByNumber(number: string): Circle | null {
+  return (cq.byNumber.get(number) as Circle | undefined) ?? null;
+}
+
+// Ten wrong numbers in fifteen minutes and a person waits fifteen minutes,
+// right number included. Kept in the database, like login failures.
+export const CODE_TRIES = 10;
+export const CODE_LOCK_MS = 15 * 60 * 1000;
+
+export function codeLockedUntil(personId: number, now: number): number | null {
+  const { n, last } = cq.codeFailures.get(personId, now - CODE_LOCK_MS) as { n: number; last: number | null };
+  return n >= CODE_TRIES && last !== null ? last + CODE_LOCK_MS : null;
+}
+
+export function recordCodeFailure(personId: number, now: number): void {
+  cq.recordCodeFailure.run(personId, now);
 }
 
 export function myCircles(personId: number): Circle[] {
@@ -574,7 +620,8 @@ export function resetInvite(circleId: number, personId: number): boolean {
   return tx(() => {
     const c = cq.byId.get(circleId) as Circle | undefined;
     if (!c || c.owner_id !== personId) return false;
-    cq.setCode.run(inviteCode(), circleId);
+    // the link and the number change together; both old ones stop working
+    cq.setCode.run(inviteCode(), joinNumber(), circleId);
     return true;
   });
 }

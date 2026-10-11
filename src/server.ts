@@ -276,6 +276,27 @@ async function handle(
     return redirect(res, `/c/${db.createCircle(name, me.id)}`);
   }
 
+  // Joining by the 6-digit number: it only finds the circle, then goes to the
+  // same "Join X?" page as the link. Wrong guesses count toward a lock.
+  if (path === "/circles/code" && method === "POST") {
+    const typed = ((await form(req)).get("code") ?? "").replace(/\s+/g, "");
+    const show = (status: number, error: string) =>
+      send(res, status, page({ title: "Circles · Buddy Up", who,
+        body: views.circlesPage(db.myCircles(me.id), "", "", { value: typed.slice(0, 7), error }) }));
+    const until = db.codeLockedUntil(me.id, now);
+    if (until !== null) {
+      const mins = Math.max(1, Math.ceil((until - now) / 60000));
+      return show(429, `Too many wrong codes. Wait ${mins} minute${mins === 1 ? "" : "s"} and try again.`);
+    }
+    const circle = /^\d{6}$/.test(typed) ? db.circleByNumber(typed) : null;
+    if (!circle) {
+      db.recordCodeFailure(me.id, now);
+      return show(404, "That code doesn't match a circle. Check it with someone in the circle.");
+    }
+    if (db.isCircleMember(circle.id, me.id)) return redirect(res, `/c/${circle.id}`);
+    return redirect(res, `/join/${circle.invite_code}`);
+  }
+
   if ((m = /^\/c\/(\d+)$/.exec(path)) && method === "GET") {
     // to anyone outside it, a circle doesn't exist
     const circle = db.circleForMember(Number(m[1]), me.id);

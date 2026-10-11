@@ -524,7 +524,17 @@ ${form}`;
 
 // ---- Circles (decision 4, step 2) ----
 
-export function circlesPage(circles: Circle[], name = "", error = ""): string {
+// "482917" as people read it: "482 917"
+export function spacedNumber(n: string): string {
+  return `${n.slice(0, 3)} ${n.slice(3)}`;
+}
+
+export function circlesPage(
+  circles: Circle[],
+  name = "",
+  error = "",
+  code: { value?: string; error?: string } = {},
+): string {
   const list = circles.length
     ? `<ul class="later-list circles">${circles
         .map(
@@ -537,6 +547,18 @@ export function circlesPage(circles: Circle[], name = "", error = ""): string {
 <h1>Your circles</h1>
 <p class="lede">A circle is a group who already know each other: a class, a hall floor, a club. At most ${CIRCLE_MAX} people.</p>
 <div data-live="circles">${list}</div>
+<form method="post" action="/circles/code" id="join-code" class="inline-gap">
+  <fieldset>
+    <legend>Join with a code</legend>
+    ${code.error ? `<p class="error" role="alert">${esc(code.error)}</p>` : ""}
+    <label for="circle-code">The circle's 6-digit code</label>
+    <div class="note-form">
+      <input id="circle-code" name="code" inputmode="numeric" autocomplete="off" maxlength="7" pattern="[0-9 ]{6,7}" required value="${esc(code.value ?? "")}" placeholder="e.g. 482 917" class="code-input">
+      <button type="submit">Join</button>
+    </div>
+    <p class="hint">Ask someone in the circle for it. You'll see the circle's name before you join.</p>
+  </fieldset>
+</form>
 <form method="post" action="/circles" class="inline-gap" id="new-circle">
   <fieldset>
     <legend>Start a circle</legend>
@@ -561,12 +583,14 @@ export function circlePage(
 <div data-live="circle">
 <p class="lede">${c.members} of ${CIRCLE_MAX} people${owner ? " · you started this one" : ""}</p>
 <h2>Invite someone you know</h2>
-<p class="hint">Anyone with this link can join while there's room. Only send it to people you'd be glad to meet.</p>
+<p class="hint">Anyone with the code or the link can join while there's room. Only share them with people you'd be glad to meet.</p>
+<p class="join-number" aria-label="Join code">${spacedNumber(c.join_number)}</p>
+<p class="hint">Type it in under Circles → Join with a code. Or send the link:</p>
 <label for="invite" class="sr-only">Invite link</label>
 <input id="invite" class="invite" readonly value="${esc(link)}">
 ${
   owner
-    ? `<form method="post" action="/c/${c.id}/reset" class="inline-gap"><button class="quiet">Reset the link</button> <span class="hint">The old link stops working.</span></form>`
+    ? `<form method="post" action="/c/${c.id}/reset" class="inline-gap"><button class="quiet">Reset the link</button> <span class="hint">The old code and link stop working.</span></form>`
     : ""
 }
 <h2>Who's in it</h2>

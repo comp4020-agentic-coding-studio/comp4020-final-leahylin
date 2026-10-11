@@ -674,6 +674,14 @@ async function inviteCode(cookie: string, circleId: number): Promise<string> {
   return code!;
 }
 
+// the 6-digit code, read off the circle page (shown with a space in the middle)
+async function joinNumber(cookie: string, circleId: number): Promise<string> {
+  const html = await get(`/c/${circleId}`, cookie);
+  const shown = /class="join-number"[^>]*>([\d ]+)</.exec(html)?.[1];
+  expect(shown).toBeTruthy();
+  return shown!.replace(/\s+/g, "");
+}
+
 async function joinCircle(cookie: string, code: string): Promise<Response> {
   return post(`/join/${code}`, {}, cookie);
 }
@@ -734,6 +742,61 @@ describe("circles: a group joined by invite, at most 25", () => {
     const newCode = await inviteCode(owner.cookie, id);
     expect(newCode).not.toBe(oldCode);
     expect((await joinCircle(late.cookie, newCode)).status).toBe(303);
+  });
+
+  it("lets someone in with the 6-digit code, through the same confirm step", async () => {
+    const owner = await person();
+    const friend = await person();
+    const id = await circle(owner.cookie);
+    const number = await joinNumber(owner.cookie, id);
+    expect(number).toMatch(/^\d{6}$/);
+
+    // typing the code only finds the circle; it leads to the confirm page, not straight in
+    const typed = await post("/circles/code", { code: `${number.slice(0, 3)} ${number.slice(3)}` }, friend.cookie);
+    expect(typed.status).toBe(303);
+    const invite = await inviteCode(owner.cookie, id);
+    expect(typed.headers.get("location")).toBe(`/join/${invite}`);
+    expect(await get(`/c/${id}`, owner.cookie)).not.toContain(friend.name);
+
+    expect((await joinCircle(friend.cookie, invite)).status).toBe(303);
+    expect(await get(`/c/${id}`, friend.cookie)).toContain(friend.name);
+    // a member who types it again just goes to the circle
+    const again = await post("/circles/code", { code: number }, friend.cookie);
+    expect(again.headers.get("location")).toBe(`/c/${id}`);
+  });
+
+  it("refuses a wrong code, and locks you out after 10 wrong tries", async () => {
+    const owner = await person();
+    const guesser = await person();
+    const id = await circle(owner.cookie);
+    const number = await joinNumber(owner.cookie, id);
+
+    // (a made-up 6-digit guess might hit another test's circle, so the misses here can't be codes)
+    const miss = await post("/circles/code", { code: "12ab56" }, guesser.cookie);
+    expect(miss.status).toBe(404);
+    expect(await miss.text()).toContain("Check it with someone in the circle");
+    for (let i = 0; i < 9; i++) await post("/circles/code", { code: "12345" }, guesser.cookie);
+
+    // 10 misses: now even the right code is refused
+    const locked = await post("/circles/code", { code: number }, guesser.cookie);
+    expect(locked.status).toBe(429);
+    expect(await locked.text()).toContain("Too many wrong codes");
+    // someone else isn't affected
+    expect((await post("/circles/code", { code: number }, (await person()).cookie)).status).toBe(303);
+  });
+
+  it("changes the code too when the owner resets", async () => {
+    const owner = await person();
+    const late = await person();
+    const id = await circle(owner.cookie);
+    const oldNumber = await joinNumber(owner.cookie, id);
+    expect((await post(`/c/${id}/reset`, {}, owner.cookie)).status).toBe(303);
+    const newNumber = await joinNumber(owner.cookie, id);
+    expect(newNumber).not.toBe(oldNumber);
+    const old = await post("/circles/code", { code: oldNumber }, late.cookie);
+    if (old.status === 303) expect(old.headers.get("location")).not.toBe(`/join/${await inviteCode(owner.cookie, id)}`);
+    else expect(old.status).toBe(404);
+    expect((await post("/circles/code", { code: newNumber }, late.cookie)).status).toBe(303);
   });
 
   it("hands the circle on when its owner leaves, and shuts you out once you've left", async () => {

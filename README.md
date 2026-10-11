@@ -20,7 +20,8 @@ not sign-ups. Five commitments:
    back out instead of not turning up; nothing records it.
 4. **A real head count.** Four never becomes five: badminton is doubles.
 5. **Only people you know.** A meetup goes to one circle (at most 25, joined
-   by invite) or the host's friends. Never public, never friends of friends.
+   by an invite link or a 6-digit code) or the host's friends. Never public,
+   never friends of friends.
 
 ## Who it's for
 
@@ -56,6 +57,8 @@ Tested in `spec/` against the running app:
 - outsiders to a meetup's circle, or non-friends of its host, can't see or
   join it, or get its live updates
 - a circle refuses a 26th member
+- a wrong circle code is refused, and ten wrong tries lock you out for 15
+  minutes; resetting changes both the code and the link
 - passwords are never stored as typed
 - a meetup missing time, place or head count, past, or over a week out is
   refused
@@ -88,4 +91,4 @@ Only judged:
 ## Status
 
 Built through crit 9: live meetups for circles and friends, notes and
-check-in.
+check-in. Since then: circles joinable by a 6-digit code.

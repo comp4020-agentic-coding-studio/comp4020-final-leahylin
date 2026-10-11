@@ -52,6 +52,8 @@ button.link{all:unset;color:var(--link);text-decoration:underline;cursor:pointer
 button.link:focus-visible{outline:2px solid var(--link);outline-offset:2px}
 .invite{font-family:ui-monospace,Menlo,monospace;font-size:14px;background:var(--soft)}
 .inline-gap{margin:12px 0}
+.join-number{font-family:var(--display);font-weight:800;font-size:44px;letter-spacing:.08em;margin:8px 0 4px;color:var(--ink)}
+.code-input{font-size:20px;letter-spacing:.15em;max-width:12rem}
 .later>span:first-child{flex:1}
 .row-actions{display:flex;gap:8px;flex-wrap:wrap}
 .count{color:var(--link);font-weight:700}
