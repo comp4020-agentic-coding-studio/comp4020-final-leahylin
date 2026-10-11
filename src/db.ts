@@ -893,13 +893,16 @@ const aq = {
   insert: db.prepare(
     "INSERT INTO activities (slug, name, colour, created_by, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
   ),
-  // with something still on (or called off but not yet due) that you can see
+  // with a meetup still on that you can see. Called-off ones don't count: an
+  // activity left with only those drops out at once (the built-in three are
+  // always listed, see interestsFor). People who'd joined still see the
+  // called-off row on home, and the page itself stays reachable through it.
   // A join, not WHERE EXISTS: in SQLite 3.51 the EXISTS form lost an
   // activity when someone else's meetup of it came first and wasn't visible.
   // The spec ("joins a name someone already used") catches it.
   live: db.prepare(`SELECT DISTINCT a.slug, a.name, a.colour FROM activities a
     JOIN meetups m ON m.interest = a.slug
-    WHERE ((m.cancelled_at IS NULL AND m.starts_at > $since) OR (m.cancelled_at IS NOT NULL AND m.starts_at > $now))
+    WHERE m.cancelled_at IS NULL AND m.starts_at > $since
       AND ${VISIBLE}
     ORDER BY a.name COLLATE NOCASE LIMIT ${ACTIVITY_MENU_MAX}`),
   // any meetup of it you can see, past ones included: enough to open its page
@@ -911,7 +914,7 @@ export function activityBySlug(slug: string): Activity | null {
 }
 
 export function liveActivities(viewerId: number, now: number): Activity[] {
-  return aq.live.all({ since: now - RUNS_FOR_MS, now, v: viewerId }) as unknown as Activity[];
+  return aq.live.all({ since: now - RUNS_FOR_MS, v: viewerId }) as unknown as Activity[];
 }
 
 export function activitySeenBy(slug: string, viewerId: number): boolean {

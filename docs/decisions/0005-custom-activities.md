@@ -26,9 +26,10 @@ up to, and would fill with duplicates and junk names.
   is the one shown. Typing "running" posts to Running. Names are 2–24
   letters, numbers, spaces, ' or -.
 - **Its name follows the meetups' visibility.** The menu and home list an
-  activity only if you can see one of its meetups that's still on (or
-  called off and not yet due), using the same VISIBLE rule as everything
-  else. Its page opens only if you can see any of its meetups, past ones
+  activity only if you can see one of its meetups that's still on, using
+  the same VISIBLE rule as everything else. Once all it has is called off,
+  it drops out at once, live; whoever had joined still sees the
+  "Called off by ..." row on home. The built-in three are always listed. Its page opens only if you can see any of its meetups, past ones
   included; otherwise it's a 404. So a circle's "Climbing" is the circle's
   business.
 - **The three stay built in**, always listed first, with their own colours

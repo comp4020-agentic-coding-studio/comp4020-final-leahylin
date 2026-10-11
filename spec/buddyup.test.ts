@@ -1468,6 +1468,29 @@ describe("activities: anyone can start something not listed", () => {
     expect(html).toMatch(/<div class="menu-list" data-live="menu">[\s\S]*?Pottery/);
   });
 
+  it("drops an activity from menus and home once all it has is called off, but not the built-in three", async () => {
+    const hostP = await person();
+    const member = await person();
+    const name = `Kayaking ${tag()}`;
+    const { res } = await startOther(hostP.cookie, name, member.cookie);
+    const id = Number(/#m(\d+)$/.exec(res.headers.get("location")!)![1]);
+    expect((await post(`/m/${id}/join`, {}, member.cookie)).status).toBe(303);
+    const watch = await listen(`p:${await idOfMe(member)}`, member.cookie);
+    expect((await post(`/m/${id}/cancel`, {}, hostP.cookie)).status).toBe(303);
+    // told at once, on their own topic
+    expect(await watch.next()).toContain("event: change");
+    for (const cookie of [hostP.cookie, member.cookie]) {
+      const home = await get("/", cookie);
+      const menu = /<div class="menu-list" data-live="menu">([\s\S]*?)<\/div>/.exec(home)?.[1] ?? "";
+      expect(menu).not.toContain(name);
+      expect(home).not.toMatch(new RegExp(`<strong>${name}</strong>`));
+      // the built-in three stay, nothing on or not
+      for (const built of ["Running", "Badminton", "Coffee"]) expect(menu).toContain(built);
+    }
+    // whoever was going still sees that it's off
+    expect(await get("/", member.cookie)).toContain(`Called off by ${hostP.name}`);
+  });
+
   it("sends live updates on the activity's own topic", async () => {
     const hostP = await person();
     const member = await person();

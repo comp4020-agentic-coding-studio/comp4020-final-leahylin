@@ -111,6 +111,21 @@ function tellCircle(circleId: number): void {
   events.publish([`c:${circleId}`], (pid) => pid !== null && db.isCircleMember(circleId, pid));
 }
 
+// A meetup for an activity beyond the three can add that activity to its
+// audience's menu and home (it may be new to them, so no page watches its i:
+// topic) or, when called off, take it away. Their own p: topic moves those
+// pages; only people who can see the meetup are told.
+function tellActivityAudience(meetupId: number): void {
+  const m = db.getMeetup(meetupId);
+  if (!m || INTERESTS.some((i) => i.slug === m.interest)) return;
+  const audienceIds =
+    m.audience === "circle" && m.audience_circle_id !== null
+      ? db.circleMembers(m.audience_circle_id).map((p) => p.id)
+      : db.friendsOf(m.host_id).map((p) => p.id);
+  for (const pid of new Set([m.host_id, ...audienceIds]))
+    events.publish([`p:${pid}`], (x) => x === pid && db.canSee(meetupId, pid));
+}
+
 // Tell the pages watching a meetup that it changed, but only the people who
 // can see it (decision 4).
 function announce(m: { id: number; interest: string }): void {
@@ -531,17 +546,7 @@ async function handle(
     // nobody is watching m:<id> yet — it didn't exist a moment ago; and only
     // its audience hears that the list moved
     events.publish([`i:${interest.slug}`], (pid) => pid !== null && db.canSee(id, pid));
-    // An activity beyond the three may be new to its audience: nobody's page
-    // was watching its i: topic. Their own p: topic moves their menu and home
-    // so it appears there; only people who can see this meetup are told.
-    if (!INTERESTS.some((i) => i.slug === interest.slug)) {
-      const audienceIds =
-        audience === "circle"
-          ? db.circleMembers(Number(circleId)).map((p) => p.id)
-          : db.friendsOf(me.id).map((p) => p.id);
-      for (const pid of new Set([me.id, ...audienceIds]))
-        events.publish([`p:${pid}`], (x) => x === pid && db.canSee(id, pid));
-    }
+    tellActivityAudience(id);
     return redirect(res, `/i/${interest.slug}#m${id}`);
   }
 
@@ -788,7 +793,10 @@ async function handle(
         }),
       );
     }
-    if (db.cancel(meetup.id, now)) announce(meetup);
+    if (db.cancel(meetup.id, now)) {
+      announce(meetup);
+      tellActivityAudience(meetup.id);
+    }
     // back to the page the button was on; anything else goes to the interest
     const from = (await form(req)).get("from");
     const to = from === "/" || from === `/m/${meetup.id}` ? from : `/i/${meetup.interest}`;
