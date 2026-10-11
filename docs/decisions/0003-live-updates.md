@@ -84,3 +84,33 @@ that script may enhance a page but never be required.
 - **`src/events.ts` holds no state that matters.** Losing the registry on
   restart costs a reconnect, not data, so CLAUDE.md's "nothing that matters
   lives in memory" still holds.
+
+## Update: who hears what, and the topics added since (2026-10-11)
+
+Decision 4 made meetups private, which changed two things above. Accounts
+replaced nicknames, so the identity seam is now `personBySession`. And a
+signal is no longer harmless to overhear: "something changed in `m:12`" tells
+you `m:12` exists. So subscriptions and publishes are now filtered by who is
+watching:
+
+| Topic | Moves when | Who may subscribe | Who is told |
+| --- | --- | --- | --- |
+| `i:<slug>` | a meetup in that activity is posted, joined, left, edited or called off | anyone signed in | only people who can see that meetup |
+| `m:<id>` | that meetup changes | only people who can see it | the same |
+| `p:<person>` | your friend requests, your circles, your menu and home cards | only that person | only that person |
+| `c:<circle>` | someone joins, leaves or resets the circle | only its members | only its members |
+
+- **`p:` and `c:` came with live friend requests and circles.** Before them a
+  friend request or a new member only showed on reload.
+- **Activities beyond the three ([decision 5](0005-custom-activities.md))**
+  use `i:<slug>` like the built-in ones; slugs may now have digits and `-`.
+  A brand-new activity has no page watching its `i:` topic yet, so posting
+  its meetup, or calling off its last one, also publishes `p:` for the
+  meetup's audience (circle members, or the host's friends), each checked
+  against the visibility rule.
+- **A live region can sit inside something the script mustn't replace.** The
+  Activities menu is a `<details>`; swapping it would close it under the
+  reader's cursor. Only its list is a live region, so items change while the
+  menu stays open.
+- **The cost grew a little.** Home now subscribes to an `i:` topic per listed
+  activity (the three plus up to eight others), still under the 24-topic cap.
