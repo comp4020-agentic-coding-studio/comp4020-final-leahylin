@@ -1450,6 +1450,24 @@ describe("activities: anyone can start something not listed", () => {
     }
   });
 
+  it("puts a brand-new activity on its audience's open pages, and nobody else's", async () => {
+    const hostP = await person();
+    const member = await person();
+    const outsider = await person();
+    const cid = await circle(hostP.cookie);
+    expect((await joinCircle(member.cookie, await inviteCode(hostP.cookie, cid))).status).toBe(303);
+    const memberWatch = await listen(`p:${await idOfMe(member)}`, member.cookie);
+    const outsiderWatch = await listen(`p:${await idOfMe(outsider)}`, outsider.cookie);
+    const name = `Pottery ${tag()}`;
+    const res = await post("/i/new/meetups", { ...meetupFields(), what: name, audience: `circle:${cid}` }, hostP.cookie);
+    expect(res.status).toBe(303);
+    expect(await memberWatch.next()).toContain("event: change");
+    expect(await outsiderWatch.next(1200)).toBe(null);
+    // and the menu's list is a live region, so it changes in place
+    const html = await get("/", member.cookie);
+    expect(html).toMatch(/<div class="menu-list" data-live="menu">[\s\S]*?Pottery/);
+  });
+
   it("sends live updates on the activity's own topic", async () => {
     const hostP = await person();
     const member = await person();

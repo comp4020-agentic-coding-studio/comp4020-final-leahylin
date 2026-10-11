@@ -382,10 +382,11 @@ export function page(opts: {
   // only "About" is offered.
   const people = requests ? `People <span class="count">(${requests})</span>` : "People";
   // The interests as one dropdown. A plain <details>, so it opens with script
-  // off; MENU_JS only closes it on a click elsewhere or Escape. It sits
-  // outside the live regions, so a live update never snaps it shut.
+  // off; MENU_JS only closes it on a click elsewhere or Escape. Only the list
+  // inside is a live region, so a new activity appears in it without the
+  // open menu snapping shut.
   // On a phone there's no room for "Log out" beside it, so it goes in there.
-  const menu = (extra: string, tail = "") => `<details class="menu${extra}"><summary>Activities</summary><div class="menu-list">${(opts.who?.activities ?? []).map(
+  const menu = (extra: string, tail = "") => `<details class="menu${extra}"><summary>Activities</summary><div class="menu-list" data-live="menu${extra ? "-phone" : ""}">${(opts.who?.activities ?? []).map(
     (i) => `<a href="/i/${i.slug}"><span class="menu-dot" style="background:${esc(i.colour)}"></span>${esc(i.name)}</a>`,
   ).join("")}<a class="menu-new" href="/i/new">+ Something else</a>${tail}</div></details>`;
   const logout = `<form class="inline" method="post" action="/logout"><button class="link">Log out</button></form>`;

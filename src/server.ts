@@ -8,7 +8,7 @@ import { marked } from "marked";
 import * as db from "./db.ts";
 import * as events from "./events.ts";
 import * as auth from "./auth.ts";
-import { canOpen, findInterest, interestsFor, NEW_INTEREST, NEW_SLUG, readActivityName, type Interest } from "./interests.ts";
+import { canOpen, findInterest, INTERESTS, interestsFor, NEW_INTEREST, NEW_SLUG, readActivityName, type Interest } from "./interests.ts";
 import { page, type Who } from "./html.ts";
 import { parseSydney, toSydneyInput } from "./time.ts";
 import * as views from "./views.ts";
@@ -531,6 +531,17 @@ async function handle(
     // nobody is watching m:<id> yet — it didn't exist a moment ago; and only
     // its audience hears that the list moved
     events.publish([`i:${interest.slug}`], (pid) => pid !== null && db.canSee(id, pid));
+    // An activity beyond the three may be new to its audience: nobody's page
+    // was watching its i: topic. Their own p: topic moves their menu and home
+    // so it appears there; only people who can see this meetup are told.
+    if (!INTERESTS.some((i) => i.slug === interest.slug)) {
+      const audienceIds =
+        audience === "circle"
+          ? db.circleMembers(Number(circleId)).map((p) => p.id)
+          : db.friendsOf(me.id).map((p) => p.id);
+      for (const pid of new Set([me.id, ...audienceIds]))
+        events.publish([`p:${pid}`], (x) => x === pid && db.canSee(id, pid));
+    }
     return redirect(res, `/i/${interest.slug}#m${id}`);
   }
 
