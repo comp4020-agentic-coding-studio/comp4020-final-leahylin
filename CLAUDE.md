@@ -28,6 +28,11 @@ around a rule; argue for changing the README first.
   friends of friends. The server checks it on every read and every write, and
   the live-update stream only signals topics the viewer can see
   ([decision 4](docs/decisions/0004-accounts-circles-friends.md)).
+- **Never show an activity's name to someone who can't see one of its
+  meetups.** Activities beyond running, badminton and coffee are made by
+  whoever posts the first meetup; the menu, home and `/i/<slug>` all go
+  through the same VISIBLE rule
+  ([decision 5](docs/decisions/0005-custom-activities.md)).
 - **Never let a circle go over 25 members.** Joining checks the count inside
   the same transaction as the insert, like the head count.
 - **Never store a password as typed.** Hash it with `scrypt` and a per-user

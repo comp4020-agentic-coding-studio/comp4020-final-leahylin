@@ -8,7 +8,7 @@ import { marked } from "marked";
 import * as db from "./db.ts";
 import * as events from "./events.ts";
 import * as auth from "./auth.ts";
-import { findInterest, INTERESTS } from "./interests.ts";
+import { canOpen, findInterest, interestsFor, NEW_INTEREST, NEW_SLUG, readActivityName, type Interest } from "./interests.ts";
 import { page, type Who } from "./html.ts";
 import { parseSydney, toSydneyInput } from "./time.ts";
 import * as views from "./views.ts";
@@ -136,7 +136,14 @@ async function handle(
   const method = req.method ?? "GET";
   const now = Date.now();
   const me = db.personBySession(cookies(req)[COOKIE], now);
-  const who = me ? { name: me.name, requests: db.incomingCount(me.id) } : null;
+  const listed = me ? interestsFor(me.id, now) : [];
+  const who = me
+    ? {
+        name: me.name,
+        requests: db.incomingCount(me.id),
+        activities: listed.map(({ slug, name, colour }) => ({ slug, name, colour })),
+      }
+    : null;
   let m: RegExpExecArray | null;
 
   // The live stream. Answers only in text/event-stream, including when it is
@@ -172,10 +179,11 @@ async function handle(
         who,
         // the counts for every interest, plus whatever you're going to
         topics: me
-          ? [...INTERESTS.map((i) => `i:${i.slug}`), ...mine.map((m) => `m:${m.id}`), `p:${me.id}`]
+          ? [...listed.map((i) => `i:${i.slug}`), ...mine.map((m) => `m:${m.id}`), `p:${me.id}`]
           : undefined,
         body: views.home(me, me ? db.upcomingCounts(now, me.id) : {}, mine, db.attendees, now,
-          me ? { circles: db.myCircles(me.id).length, friends: db.friendsOf(me.id).length, requests: who?.requests ?? 0 } : undefined),
+          me ? { circles: db.myCircles(me.id).length, friends: db.friendsOf(me.id).length, requests: who?.requests ?? 0 } : undefined,
+          listed),
       }),
     );
   }
@@ -414,9 +422,16 @@ async function handle(
     return redirect(res, "/people#friends");
   }
 
-  if ((m = /^\/i\/([a-z]+)$/.exec(path)) && method === "GET") {
+  // Starting something that isn't listed: the host form plus a name for it.
+  if (path === `/i/${NEW_SLUG}` && method === "GET") {
+    return send(res, 200, page({ title: "Something else · Buddy Up", who,
+      body: views.newActivityPage(views.hostForm(NEW_INTEREST, now, {}, "", undefined, audienceChoices(me.id))) }));
+  }
+
+  if ((m = /^\/i\/([a-z0-9-]{1,32})$/.exec(path)) && method === "GET") {
     const interest = findInterest(m[1]);
-    if (!interest) return notFound(res, who);
+    // someone else's activity doesn't exist for you, name included
+    if (!interest || !canOpen(interest.slug, me.id)) return notFound(res, who);
     const list = db.upcoming(interest.slug, now, me.id);
     const going = new Set(
       me ? list.filter((x) => db.isGoing(x.id, me.id)).map((x) => x.id) : [],
@@ -444,11 +459,16 @@ async function handle(
     );
   }
 
-  if ((m = /^\/i\/([a-z]+)\/meetups$/.exec(path)) && method === "POST") {
-    const interest = findInterest(m[1]);
-    if (!interest) return notFound(res, who);
-    if (!me) return redirect(res, `/i/${interest.slug}`);
+  if ((m = /^\/i\/([a-z0-9-]{1,32})\/meetups$/.exec(path)) && method === "POST") {
+    const isNew = m[1] === NEW_SLUG;
+    const found = isNew ? NEW_INTEREST : findInterest(m[1]);
+    if (!found || (!isNew && !canOpen(found.slug, me.id))) return notFound(res, who);
+    let interest: Interest = found;
     const f = await form(req);
+    // a new one: the typed name, or the listed activity it already is
+    const named = isNew ? readActivityName(f.get("what")) : null;
+    const name = named && "slug" in named ? named : null;
+    if (name) interest = findInterest(name.slug) ?? interest;
     const { values, startsAt, capacity, error: formError } = readMeetupForm(f, now);
     // who it's for: "friends", or "circle:<id>" for a circle you're in
     const aud = f.get("audience") ?? "";
@@ -456,12 +476,17 @@ async function handle(
     const audience = aud === "friends" ? "friends" : circleId ? "circle" : null;
     const choices = audienceChoices(me.id);
     const error =
+      (named?.error ?? "") ||
       formError ||
       (audience === null ? "Say who it's for: one of your circles, or your friends." : "") ||
       (audience === "circle" && !choices.circles.some((c) => c.id === Number(circleId))
         ? "You can only post to a circle you're in."
         : "");
-    const valuesWithAudience = { ...values, audience: aud };
+    const valuesWithAudience = { ...values, audience: aud, what: f.get("what") ?? "" };
+    if (error && isNew) {
+      return send(res, 400, page({ title: "Something else · Buddy Up", who,
+        body: views.newActivityPage(views.hostForm(NEW_INTEREST, now, valuesWithAudience, error, undefined, choices)) }));
+    }
     if (error) {
       const list = db.upcoming(interest.slug, now, me.id);
       const going = new Set(
@@ -487,6 +512,10 @@ async function handle(
         }),
       );
     }
+    // made only now, with a meetup to show it to: an activity is never listed
+    // with nothing in it
+    if (name && interest.slug === NEW_SLUG)
+      interest = { ...interest, ...db.ensureActivity(name.slug, name.name, me.id, now) };
     const id = db.createMeetup({
       audience: audience!,
       circleId: audience === "circle" ? Number(circleId) : null,

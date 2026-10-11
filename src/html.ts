@@ -1,4 +1,3 @@
-import { INTERESTS } from "./interests.ts";
 
 // Every piece of user text goes through esc() before it reaches a page.
 export function esc(value: unknown): string {
@@ -32,6 +31,9 @@ details.menu summary:hover{color:var(--link)}
 .menu-list a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;color:var(--ink);text-decoration:none;font-size:15px;white-space:nowrap}
 .menu-list a:hover,.menu-list a:focus-visible{background:var(--soft)}
 .menu-dot{width:10px;height:10px;border-radius:50%;flex:none}
+.menu-list a.menu-new{color:var(--muted);border-top:1px solid var(--line);border-radius:0 0 10px 10px;margin-top:4px}
+.interest.other{background:var(--card);color:var(--ink);border:1.5px dashed #CFC6B9}
+.interest.other .meta{color:var(--muted)}
 .phone-menu summary{font-weight:700}
 .phone-menu .menu-list{left:auto;right:-60px}
 .menu-out{border-top:1px solid var(--line);margin-top:4px;padding:10px 12px 6px}
@@ -357,7 +359,12 @@ const LIVE_JS = `
 })();
 `;
 
-export type Who = { name: string; requests: number } | null;
+// `activities`: what this person's Activities menu lists (interestsFor()).
+export type Who = {
+  name: string;
+  requests: number;
+  activities: { slug: string; name: string; colour: string }[];
+} | null;
 
 export function page(opts: {
   title: string;
@@ -378,15 +385,15 @@ export function page(opts: {
   // off; MENU_JS only closes it on a click elsewhere or Escape. It sits
   // outside the live regions, so a live update never snaps it shut.
   // On a phone there's no room for "Log out" beside it, so it goes in there.
-  const menu = (extra: string, tail = "") => `<details class="menu${extra}"><summary>Activities</summary><div class="menu-list">${INTERESTS.map(
-    (i) => `<a href="/i/${i.slug}"><span class="menu-dot" style="background:${i.colour}"></span>${esc(i.name)}</a>`,
-  ).join("")}${tail}</div></details>`;
+  const menu = (extra: string, tail = "") => `<details class="menu${extra}"><summary>Activities</summary><div class="menu-list">${(opts.who?.activities ?? []).map(
+    (i) => `<a href="/i/${i.slug}"><span class="menu-dot" style="background:${esc(i.colour)}"></span>${esc(i.name)}</a>`,
+  ).join("")}<a class="menu-new" href="/i/new">+ Something else</a>${tail}</div></details>`;
   const logout = `<form class="inline" method="post" action="/logout"><button class="link">Log out</button></form>`;
   const nav = opts.who
     ? `${menu("")}<span class="nav-live" data-live="nav"><a href="/people">${people}</a></span>`
     : "";
   const who = opts.who
-    ? `<span class="who">${opts.topics?.length ? `<span class="live-dot" title="Live"></span>` : ""}<span class="hey">Hey </span><b class="me">${esc(opts.who.name)}</b><span class="me-sep"> ·</span> ${menu(" phone-menu", `<div class="menu-out">${logout}</div>`)}<span class="people-link" aria-hidden="true">·</span> <a class="people-link" href="/people" data-live="nav-people">${people}</a><span class="wide-out"><span aria-hidden="true">·</span> ${logout}</span></span>`
+    ? `<span class="who">${opts.topics?.length ? `<span class="live-dot" title="Live"></span>` : ""}<span class="hey">Hey </span><b class="me">${esc(opts.who.name)}</b><span class="me-sep"> ·</span> ${menu(" phone-menu", `<div class="menu-out">${logout}</div>`)}<span class="people-link" aria-hidden="true">·</span> <a class="people-link" href="/people" data-live="nav-people">${people}</a><span class="wide-out">${logout}</span></span>`
     : `<span class="who"><a href="/login">Log in</a></span>`;
   const style = opts.colour ? ` style="--c:${esc(opts.colour)}"` : "";
   const live = opts.topics?.length

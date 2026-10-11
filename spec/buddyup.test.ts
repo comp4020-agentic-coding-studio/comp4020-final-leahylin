@@ -1372,6 +1372,97 @@ describe("home: finding your people", () => {
   });
 });
 
+// ---- Activities beyond the three (decision 5) ----
+
+// Start a meetup for a new activity, posted to a fresh circle that `member`
+// (if given) is in. Returns the response, unread.
+async function startOther(
+  cookie: string,
+  what: string,
+  member?: string,
+): Promise<{ res: Response; cid: number }> {
+  const cid = await circle(cookie);
+  if (member) expect((await joinCircle(member, await inviteCode(cookie, cid))).status).toBe(303);
+  const res = await post("/i/new/meetups", { ...meetupFields(), what, audience: `circle:${cid}` }, cookie);
+  return { res, cid };
+}
+
+describe("activities: anyone can start something not listed", () => {
+  it("makes the activity with its first meetup, with its own page", async () => {
+    const hostP = await person();
+    const member = await person();
+    const name = `Climbing ${tag()}`;
+    const slug = name.toLowerCase().replace(" ", "-");
+    const { res } = await startOther(hostP.cookie, name, member.cookie);
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toMatch(new RegExp(`^/i/${slug}#m\\d+$`));
+    const pageHtml = await get(`/i/${slug}`, member.cookie);
+    expect(pageHtml).toContain(`<h1`);
+    expect(pageHtml).toContain(name);
+    // listed for the people it's for, host included, in the menu and on home
+    for (const cookie of [member.cookie, hostP.cookie]) {
+      const home = await get("/", cookie);
+      expect(home).toContain(`href="/i/${slug}"`);
+      expect(home).toContain('href="/i/new"');
+    }
+  });
+
+  it("joins a name someone already used, in any case, and the built-in three", async () => {
+    const hostP = await person();
+    const name = `Board games ${tag()}`;
+    const first = await startOther(hostP.cookie, name);
+    const second = await startOther(hostP.cookie, name.toUpperCase());
+    const place = (r: Response) => r.headers.get("location")?.split("#")[0];
+    expect(place(second.res)).toBe(place(first.res));
+    // the first spelling is the one shown
+    expect(await get(place(first.res)!, hostP.cookie)).toContain(name);
+    const running = await startOther(hostP.cookie, "running");
+    expect(place(running.res)).toBe("/i/running");
+    // someone else using the same name gets it listed for them, though they
+    // can't see the first person's meetup
+    const other = await person();
+    const theirs = await startOther(other.cookie, name.toLowerCase());
+    expect(place(theirs.res)).toBe(place(first.res));
+    expect(await get("/", other.cookie)).toContain(`href="${place(first.res)}"`);
+  });
+
+  it("never shows an activity, or its name, to someone who can't see one of its meetups", async () => {
+    const hostP = await person();
+    const outsider = await person();
+    const name = `Secret ${tag()}`;
+    const { res } = await startOther(hostP.cookie, name);
+    const where = res.headers.get("location")!.split("#")[0];
+    for (const path of ["/", "/people", "/i/running"]) expect(await get(path, outsider.cookie)).not.toContain(name);
+    const direct = await fetch(new URL(where, baseUrl), { headers: { cookie: outsider.cookie } });
+    expect(direct.status).toBe(404);
+    expect(await direct.text()).not.toContain(name);
+    // nor can they post into it by guessing the address
+    const sneak = await post(`${where}/meetups`, meetupFields(), outsider.cookie);
+    expect(sneak.status).toBe(404);
+  });
+
+  it("refuses a name that's too short, odd, or taken by the page itself", async () => {
+    const hostP = await person();
+    for (const what of ["x", "!!!", "new", "a".repeat(25), ""]) {
+      const { res } = await startOther(hostP.cookie, what);
+      expect(res.status).toBe(400);
+      expect(await res.text()).toContain('id="what"');
+    }
+  });
+
+  it("sends live updates on the activity's own topic", async () => {
+    const hostP = await person();
+    const member = await person();
+    const name = `Chess ${tag()}`;
+    const { res, cid } = await startOther(hostP.cookie, name, member.cookie);
+    const slug = res.headers.get("location")!.split("#")[0].slice(3);
+    const watch = await listen(`i:${slug}`, member.cookie);
+    const again = await post(`/i/${slug}/meetups`, { ...meetupFields(), audience: `circle:${cid}` }, hostP.cookie);
+    expect(again.status).toBe(303);
+    expect(await watch.next()).toContain("event: change");
+  });
+});
+
 describe("header: the activities in one menu", () => {
   it("lists every interest under Activities, as plain links that work with script off", async () => {
     const me = await person();

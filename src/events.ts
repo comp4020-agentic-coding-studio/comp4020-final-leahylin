@@ -45,7 +45,7 @@ const RETRY_MS = 60_000;
 // friends count, their circles) and c:<circle> a circle's member list. Both
 // are only ever subscribed by the person or a member: the server drops any
 // other before subscribing (server.ts, /events).
-const TOPIC = /^(i:[a-z]{1,24}|[mpc]:[0-9]{1,9})$/;
+const TOPIC = /^(i:[a-z0-9-]{1,32}|[mpc]:[0-9]{1,9})$/;
 const MAX_TOPICS = 24;
 
 export function parseTopics(raw: string | null): Set<string> {

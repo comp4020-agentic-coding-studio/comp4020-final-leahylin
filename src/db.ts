@@ -865,6 +865,67 @@ const vq = {
 };
 
 
+// ---- Activities beyond the built-in three (decision 5) ----
+// One is made the first time someone starts a meetup for it. Its name is only
+// ever shown to people who can see one of its meetups: the same VISIBLE rule,
+// so a circle's "Climbing" stays the circle's business.
+db.exec(`CREATE TABLE IF NOT EXISTS activities (
+  slug       TEXT    PRIMARY KEY,
+  name       TEXT    NOT NULL,
+  colour     TEXT    NOT NULL,
+  created_by INTEGER NOT NULL REFERENCES people(id),
+  created_at INTEGER NOT NULL
+)`);
+
+// dark enough for white text, and none of them the built-ins' colours
+const ACTIVITY_COLOURS = ["#1D4ED8", "#7E22CE", "#BE185D", "#0F766E", "#0369A1", "#4338CA", "#9F1239", "#3F6212"];
+export const ACTIVITY_MENU_MAX = 8;
+
+export interface Activity {
+  slug: string;
+  name: string;
+  colour: string;
+}
+
+const aq = {
+  bySlug: db.prepare("SELECT slug, name, colour FROM activities WHERE slug = ?"),
+  count: db.prepare("SELECT COUNT(*) AS n FROM activities"),
+  insert: db.prepare(
+    "INSERT INTO activities (slug, name, colour, created_by, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
+  ),
+  // with something still on (or called off but not yet due) that you can see
+  // A join, not WHERE EXISTS: in SQLite 3.51 the EXISTS form lost an
+  // activity when someone else's meetup of it came first and wasn't visible.
+  // The spec ("joins a name someone already used") catches it.
+  live: db.prepare(`SELECT DISTINCT a.slug, a.name, a.colour FROM activities a
+    JOIN meetups m ON m.interest = a.slug
+    WHERE ((m.cancelled_at IS NULL AND m.starts_at > $since) OR (m.cancelled_at IS NOT NULL AND m.starts_at > $now))
+      AND ${VISIBLE}
+    ORDER BY a.name COLLATE NOCASE LIMIT ${ACTIVITY_MENU_MAX}`),
+  // any meetup of it you can see, past ones included: enough to open its page
+  seen: db.prepare(`SELECT 1 FROM meetups m WHERE m.interest = $slug AND ${VISIBLE} LIMIT 1`),
+};
+
+export function activityBySlug(slug: string): Activity | null {
+  return (aq.bySlug.get(slug) as Activity | undefined) ?? null;
+}
+
+export function liveActivities(viewerId: number, now: number): Activity[] {
+  return aq.live.all({ since: now - RUNS_FOR_MS, now, v: viewerId }) as unknown as Activity[];
+}
+
+export function activitySeenBy(slug: string, viewerId: number): boolean {
+  return aq.seen.get({ slug, v: viewerId }) !== undefined;
+}
+
+// The activity for this slug, made now if it's new. The first person's
+// spelling ("Board games") is the one everyone sees.
+export function ensureActivity(slug: string, name: string, personId: number, now: number): Activity {
+  const n = (aq.count.get() as { n: number }).n;
+  aq.insert.run(slug, name, ACTIVITY_COLOURS[n % ACTIVITY_COLOURS.length], personId, now);
+  return activityBySlug(slug)!;
+}
+
 // ---- Check-in (ADR 0002) ----
 // Open from the start time for an hour. Self-reported, one row per person per
 // meetup, and nothing anywhere reads one person's check-ins across meetups.

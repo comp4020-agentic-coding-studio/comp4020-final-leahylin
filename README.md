@@ -4,8 +4,9 @@ Find someone to do the thing with, today.
 
 An activity buddy is someone you know who's up for the same thing. No
 planning, no pressure: just one run, one game, one coffee. Pick running,
-badminton or coffee, then join or start a meetup for your
-circle or friends: *Tuesday 6pm, Black Mountain, 4 people, easy pace*.
+badminton or coffee, or name something else, then join or start a meetup
+for your circle or friends: *Tuesday 6pm, Black Mountain, 4 people, easy
+pace*.
 
 ## What good means here
 
@@ -36,6 +37,8 @@ joined as one circle from a code on screen.
 - **Direct messages:** the point is to meet; notes are per meetup.
 - **Profiles, followers, likes, ratings:** no auditions.
 - **Search, maps, recommendations:** a list by time is enough.
+- **A public list of activities:** anyone can name a new one, but only
+  people who can see one of its meetups see its name.
 - **Changing your name:** one name per person, for good, so a name on a
   meetup is always the same person.
 - **Public friend lists or counts:** your friends are visible only to you.
@@ -62,6 +65,9 @@ Tested in `spec/` against the running app:
 - a wrong circle code is refused, and ten wrong tries lock you out for 15
   minutes; resetting changes both the code and the link
 - no two people share a display name, ignoring case, and names can't change
+- a new activity is made with its first meetup, a name in any case joins the
+  existing one, and someone who can't see any of its meetups never sees its
+  name or its page
 - passwords are never stored as typed
 - a meetup missing time, place or head count, past, or over a week out is
   refused
@@ -94,5 +100,6 @@ Only judged:
 ## Status
 
 Built through crit 9: live meetups for circles and friends, notes and
-check-in. Since then: circles joinable by a 6-digit code, and unique
-display names.
+check-in. Since then: circles joinable by a 6-digit code, unique display
+names, and activities beyond the built-in three
+([decision 5](docs/decisions/0005-custom-activities.md)).

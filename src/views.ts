@@ -1,6 +1,6 @@
 import type { Circle, Meetup, MyMeetup, Note, Person, Someone } from "./db.ts";
 import { CHECKIN_MS, CIRCLE_MAX, NOTE_MAX, QUICK_NOTES, QUICK_REPLIES, RUNS_FOR_MS } from "./db.ts";
-import { INTERESTS, findInterest, type Interest } from "./interests.ts";
+import { ACTIVITY_NAME_MAX, INTERESTS, NEW_SLUG, findInterest, type Interest } from "./interests.ts";
 import { esc } from "./html.ts";
 import {
   formatDate,
@@ -301,16 +301,21 @@ export function home(
   peopleFor: (id: number) => { name: string }[],
   now: number,
   people: PeopleCounts = { circles: 0, friends: 0, requests: 0 },
+  interests: Interest[] = INTERESTS,
 ): string {
-  const cards = INTERESTS.map((i) => {
+  const cards = interests.map((i) => {
     const n = counts[i.slug] ?? 0;
     return `<a class="interest" href="/i/${i.slug}" style="--c:${i.colour}">
       <strong>${esc(i.name)}</strong>
       <div>${esc(i.blurb)}</div>
       <div class="meta">${n === 0 ? "nothing on yet — start one" : `${n} coming up`}</div>
     </a>`;
-  }).join("");
-  const interests = `<h2>Interests</h2>\n<div class="interests row3">${cards}</div>`;
+  }).join("") + `<a class="interest other" href="/i/${NEW_SLUG}">
+      <strong>+ Something else</strong>
+      <div>Climbing, board games, a study session…</div>
+      <div class="meta">name it and start one</div>
+    </a>`;
+  const interestGrid = `<h2>Interests</h2>\n<div class="interests row3">${cards}</div>`;
   const intro = `<h1>What do you want company for?</h1>
 <p class="lede">Pick a thing. Join someone who's going, or say when and where you are.</p>`;
   if (!me) return welcome();
@@ -333,7 +338,7 @@ export function home(
     : `<p class="empty">Nothing yet. Pick something above.</p>`;
   const body =
     !next
-      ? `${intro}\n${startHere(people)}\n${interests}\n<h2>You're going to</h2>\n${calledOff}`
+      ? `${intro}\n${startHere(people)}\n${interestGrid}\n<h2>You're going to</h2>\n${calledOff}`
       : `<div class="cols">
 <div>
 <h1>You're going to</h1>
@@ -375,6 +380,7 @@ function audienceField(choices: AudienceChoices, chosen: string | undefined): st
 }
 
 export interface HostFormValues {
+  what?: string;
   audience?: string;
   starts_at?: string;
   place?: string;
@@ -397,9 +403,19 @@ export function hostForm(
   const action = editing
     ? `/m/${editing.id}/edit`
     : `/i/${interest.slug}/meetups`;
+  const isNew = !editing && interest.slug === NEW_SLUG;
   const legend = editing
     ? "Edit your meetup"
-    : `Start a ${esc(interest.name.toLowerCase())} meetup`;
+    : isNew
+      ? "Start something else"
+      : `Start a ${esc(interest.name.toLowerCase())} meetup`;
+  // Only when it's new: the activity's name. Seen by the same people as the
+  // meetup, and listed for them under Activities while it's on.
+  const what = isNew
+    ? `<label for="what">What?</label>
+    <input id="what" name="what" required minlength="2" maxlength="${ACTIVITY_NAME_MAX}" placeholder="e.g. Climbing, Board games" value="${esc(values.what ?? "")}">
+    <p class="hint">If someone you know already named it, you'll join theirs.</p>`
+    : "";
   const minCapacity = editing ? Math.max(2, editing.going) : 2;
   const capacityHint =
     editing && editing.going > 2
@@ -410,6 +426,7 @@ export function hostForm(
   <fieldset>
     <legend>${legend}</legend>
     ${error ? `<p class="error" role="alert">${esc(error)}</p>` : ""}
+    ${what}
     ${
       editing
         ? `<p class="hint">For <b>${esc(editing.audienceLabel)}</b>. Who it's for can't change after posting.</p>`
@@ -434,6 +451,21 @@ export function hostForm(
     }</p>
   </fieldset>
 </form>`;
+}
+
+// Starting a meetup for an activity that isn't listed yet.
+export function newActivityPage(form: string): string {
+  return `
+<div class="cols">
+<div>
+<h1>Something else</h1>
+<p class="lede">Name it, then say when and where. Only the people you post it to will see it, or its name.</p>
+<p class="hint">Running, badminton and coffee have their own pages, under Activities.</p>
+</div>
+<aside class="side">
+${form}
+</aside>
+</div>`;
 }
 
 export function interestPage(
