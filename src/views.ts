@@ -620,18 +620,37 @@ export function peoplePage(
         .join("")}</ul>`
     : `<p class="empty">No friends here yet. Ask someone for their username.</p>`;
   const code = f.code ?? {};
+  // On a wide screen: lists on the left, the three forms in a side column.
+  // On a phone the wrappers dissolve (display:contents) and each form sits
+  // under the list it adds to; see .people-page in src/html.ts.
   return `
+<div class="people-page">
+<div class="p-main">
+<div class="p-head">
 <h1>People</h1>
 <p class="lede">Your meetups go to a circle you're in, or to your friends. No one else.</p>
 <p class="jump"><a href="#circles">Circles</a><a href="#friends">Friends</a></p>
-${f.note ? `<p class="banner" role="status">${esc(f.note)}</p>` : ""}
-<div data-live="requests">${asking}</div>
-<div class="people-grid">
-<section id="circles">
+</div>
+${f.note ? `<p class="banner p-note" role="status">${esc(f.note)}</p>` : ""}
+<div data-live="requests" class="p-req">${asking}</div>
+<div class="p-lists">
+<section id="circles" class="p-c">
 <h2>Circles</h2>
 <p class="hint">A group who already know each other: a class, a hall floor, a club. At most ${CIRCLE_MAX} people.</p>
 <div data-live="circles">${circleList}</div>
-<form method="post" action="/circles/code" id="join-code" class="inline-gap">
+</section>
+<section id="friends" class="p-f">
+<h2>Friends</h2>
+<p class="hint">Meetups for "my friends" go to these people. Only you can see this list.</p>
+<div data-live="friends">
+${friendList}
+${sent}
+</div>
+</section>
+</div>
+</div>
+<div class="p-side">
+<form method="post" action="/circles/code" id="join-code" class="inline-gap p-join">
   <fieldset>
     <legend>Join with a code</legend>
     ${code.error ? `<p class="error" role="alert">${esc(code.error)}</p>` : ""}
@@ -643,7 +662,7 @@ ${f.note ? `<p class="banner" role="status">${esc(f.note)}</p>` : ""}
     <p class="hint">Ask someone in the circle for it. You'll see the circle's name before you join.</p>
   </fieldset>
 </form>
-<form method="post" action="/circles" class="inline-gap" id="new-circle">
+<form method="post" action="/circles" class="inline-gap p-start" id="new-circle">
   <fieldset>
     <legend>Start a circle</legend>
     ${f.circleError ? `<p class="error" role="alert">${esc(f.circleError)}</p>` : ""}
@@ -652,15 +671,7 @@ ${f.note ? `<p class="banner" role="status">${esc(f.note)}</p>` : ""}
     <button type="submit">Start it</button>
   </fieldset>
 </form>
-</section>
-<section id="friends">
-<h2>Friends</h2>
-<p class="hint">Meetups for "my friends" go to these people. Only you can see this list.</p>
-<div data-live="friends">
-${friendList}
-${sent}
-</div>
-<form method="post" action="/friends" id="add-friend" class="inline-gap">
+<form method="post" action="/friends" id="add-friend" class="inline-gap p-add">
   <fieldset>
     <legend>Add a friend</legend>
     ${f.friendError ? `<p class="error" role="alert">${esc(f.friendError)}</p>` : ""}
@@ -670,6 +681,6 @@ ${sent}
     <button type="submit">Send request</button>
   </fieldset>
 </form>
-</section>
+</div>
 </div>`;
 }
