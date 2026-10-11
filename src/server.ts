@@ -174,7 +174,8 @@ async function handle(
         topics: me
           ? [...INTERESTS.map((i) => `i:${i.slug}`), ...mine.map((m) => `m:${m.id}`), `p:${me.id}`]
           : undefined,
-        body: views.home(me, me ? db.upcomingCounts(now, me.id) : {}, mine, db.attendees, now),
+        body: views.home(me, me ? db.upcomingCounts(now, me.id) : {}, mine, db.attendees, now,
+          me ? { circles: db.myCircles(me.id).length, friends: db.friendsOf(me.id).length, requests: who?.requests ?? 0 } : undefined),
       }),
     );
   }

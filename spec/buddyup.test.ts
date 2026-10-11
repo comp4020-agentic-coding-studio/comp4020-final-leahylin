@@ -418,6 +418,19 @@ describe("you're going to: opening the app tells you where to be", () => {
       `Called off by ${hostP.name}`,
     );
   });
+
+  it("doesn't treat a called-off meetup as a plan, but still shows it's off", async () => {
+    const hostP = await person();
+    const guest = await person();
+    const id = await host(hostP.cookie);
+    expect((await joinMeetup(id, guest.cookie)).status).toBe(303);
+    expect((await post(`/m/${id}/cancel`, {}, hostP.cookie)).status).toBe(303);
+    const html = await get("/", guest.cookie);
+    expect(html).toContain("What do you want company for?");
+    expect(html).not.toContain("<h1>You're going to</h1>");
+    expect(html).toContain(`Called off by ${hostP.name}`);
+    expect(html).not.toContain("Nothing yet. Pick something above.");
+  });
 });
 
 describe("persistence: your trace is there when you come back", () => {
@@ -1284,6 +1297,33 @@ describe("people: circles and friends on one page", () => {
     const html = await res.text();
     expect(html).toContain("<h1>People</h1>");
     expect(html).toContain('value="no_such_person_zz"');
+  });
+});
+
+describe("home: finding your people", () => {
+  it("tells someone with no circle and no friend why they see nothing, and how to start", async () => {
+    const me = await person();
+    const html = await get("/", me.cookie);
+    expect(html).toContain("First, find your people");
+    expect(html).toContain('action="/circles/code"');
+    expect(html).toContain('href="/people#circles"');
+    expect(html).toContain('href="/people#friends"');
+  });
+
+  it("swaps that for a summary once they're in a circle, and joins by code from home", async () => {
+    const owner = await person();
+    const me = await person();
+    const id = await circle(owner.cookie);
+    const number = await joinNumber(owner.cookie, id);
+    // the home page's code form leads to the same confirm step
+    const typed = await post("/circles/code", { code: number }, me.cookie);
+    expect(typed.headers.get("location")).toBe(`/join/${await inviteCode(owner.cookie, id)}`);
+    expect((await joinCircle(me.cookie, await inviteCode(owner.cookie, id))).status).toBe(303);
+    const html = await get("/", me.cookie);
+    expect(html).not.toContain("First, find your people");
+    expect(html).toContain("Your people");
+    expect(html).toContain("1 circle · 0 friends");
+    expect(html).toContain('action="/circles/code"');
   });
 });
 

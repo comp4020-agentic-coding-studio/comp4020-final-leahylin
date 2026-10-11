@@ -29,6 +29,14 @@ header.site .bar{max-width:40rem;margin:0 auto;padding:14px 16px;display:flex;ju
 @media (max-width:479px){.who b.me,.who .me-sep{display:none}}
 .jump{display:flex;gap:16px;margin:4px 0 8px}
 .waiting{background:#FFF4D6;border:1px solid #F0D58A;border-radius:16px;padding:4px 18px 12px;margin:16px 0}
+.start-here{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px 22px;margin:18px 0 8px;box-shadow:0 6px 18px rgba(60,40,20,.08)}
+.start-here h2{margin:0 0 4px;font-size:20px}
+.start-grid{display:grid;gap:18px;margin-top:14px}
+.start-grid h3{margin:0 0 6px;font-size:15px}
+.home-code label{display:block;font-weight:700;font-size:15px;margin:0 0 6px}
+.your-people{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-top:18px}
+.your-people h2{margin:0 0 4px}
+.your-people .more{margin:10px 0 0}
 .people-page{display:flex;flex-direction:column}
 .p-main,.p-side,.p-lists{display:contents}
 .p-head{order:1}.p-note{order:2}.p-req{order:3}.p-c{order:4}.p-join{order:5}.p-start{order:6}.p-f{order:7}.p-add{order:8}
@@ -170,6 +178,7 @@ main.wrap:not(:has(.cols,.interests,.hero,.people-page)){max-width:calc(44rem + 
 .p-side{position:sticky;top:24px}
 .p-side form:first-child{margin-top:0}
 .people-page .jump{display:none}
+.start-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
 h1{font-size:clamp(36px,3.2vw,52px)}
 main.wrap{padding-top:36px;padding-bottom:48px}
 .cols{display:grid;grid-template-columns:minmax(0,1fr) clamp(300px,26vw,400px);gap:clamp(32px,3vw,56px);align-items:start}

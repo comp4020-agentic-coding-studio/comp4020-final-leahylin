@@ -233,12 +233,64 @@ function laterRow(m: MyMeetup, me: Person, now: number): string {
   }${lines.length ? `<div class="banner small">${lines.map((l) => `<p>${l}</p>`).join("")}</div>` : ""}</li>`;
 }
 
+export interface PeopleCounts {
+  circles: number;
+  friends: number;
+  requests: number;
+}
+
+// The join-code form, as on /people; a wrong code comes back on /people.
+function codeForm(id: string): string {
+  return `<form method="post" action="/circles/code" class="home-code">
+  <label for="${id}">Got a 6-digit code?</label>
+  <div class="note-form">
+    <input id="${id}" name="code" inputmode="numeric" autocomplete="off" maxlength="7" pattern="[0-9 ]{6,7}" required placeholder="e.g. 482 917" class="code-input">
+    <button type="submit">Join</button>
+  </div>
+</form>`;
+}
+
+// Above the interests until you have plans. Someone with no circle and no
+// friend sees no meetups at all (commitment 5), so it says why first.
+function startHere(p: PeopleCounts): string {
+  const alone = p.circles === 0 && p.friends === 0;
+  const waiting = p.requests ? ` · <a href="/people"><b>${plural(p.requests, "request")} waiting</b></a>` : "";
+  return `<section class="start-here">
+<h2>${alone ? "First, find your people" : "Your people"}</h2>
+<p class="hint">${
+    alone
+      ? "You only see meetups from your circles and friends, and you have none yet."
+      : `${plural(p.circles, "circle")} · ${plural(p.friends, "friend")}${waiting}. You see meetups from these people.`
+  }</p>
+<div class="start-grid">
+<div>${codeForm("home-code")}</div>
+<div><h3>Start a circle</h3><p class="hint">For your class, hall floor or club. You'll get a code to share.</p><a href="/people#circles">Start one →</a></div>
+<div><h3>Add a friend</h3><p class="hint">Ask them for their username.</p><a href="/people#friends">Add a friend →</a></div>
+</div>
+</section>`;
+}
+
+function plural(n: number, one: string): string {
+  return `${n} ${one}${n === 1 ? "" : "s"}`;
+}
+
+function yourPeople(p: PeopleCounts): string {
+  const waiting = p.requests ? ` · <a href="/people"><b>${plural(p.requests, "request")} waiting</b></a>` : "";
+  return `<section class="your-people">
+<h2>Your people</h2>
+<p class="hint">${plural(p.circles, "circle")} · ${plural(p.friends, "friend")}${waiting}</p>
+${codeForm("side-code")}
+<p class="more"><a href="/people">Start a circle or add a friend →</a></p>
+</section>`;
+}
+
 export function home(
   me: Person | null,
   counts: Record<string, number>,
   mine: MyMeetup[],
   peopleFor: (id: number) => { name: string }[],
   now: number,
+  people: PeopleCounts = { circles: 0, friends: 0, requests: 0 },
 ): string {
   const cards = INTERESTS.map((i) => {
     const n = counts[i.slug] ?? 0;
@@ -259,12 +311,19 @@ export function home(
   const later = rest.length
     ? `<h2>${next ? "After that" : "Your plans"}</h2><ul class="later-list">${rest.map((m) => laterRow(m, me, now)).join("")}</ul>`
     : "";
-  // Signed in there is no form on this page, and joining your first meetup
-  // reorders the whole thing — plans move above the interests. Swapping a
-  // region can't reorder its neighbours, so the whole body is one live region.
+  // Joining your first meetup reorders the whole thing — plans move above the
+  // interests. Swapping a region can't reorder its neighbours, so the whole
+  // body is one live region. Its one form (the join code) is safe: the live
+  // script never swaps while an input has focus.
+  // Only a meetup still on counts as a plan. If everything you joined was
+  // called off, the page is the "nothing yet" one, with those kept at the
+  // bottom so you still learn they're off.
+  const calledOff = rest.length
+    ? `<ul class="later-list">${rest.map((m) => laterRow(m, me, now)).join("")}</ul>`
+    : `<p class="empty">Nothing yet. Pick something above.</p>`;
   const body =
-    mine.length === 0
-      ? `${intro}\n${interests}\n<h2>You're going to</h2>\n<p class="empty">Nothing yet. Pick something above.</p>`
+    !next
+      ? `${intro}\n${startHere(people)}\n${interests}\n<h2>You're going to</h2>\n${calledOff}`
       : `<div class="cols">
 <div>
 <h1>You're going to</h1>
@@ -274,6 +333,7 @@ ${later}
 <aside class="side">
 <h2>Find something else</h2>
 <div class="interests">${cards}</div>
+${yourPeople(people)}
 </aside>
 </div>`;
   return `<div data-live="home">${body}</div>`;
