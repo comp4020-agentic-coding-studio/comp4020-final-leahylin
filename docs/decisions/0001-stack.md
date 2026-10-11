@@ -63,3 +63,27 @@ the server, so the code shows with script off and needs no image route.
 Rejected: writing the encoder by hand, for the reason above; `qrcode`, which
 pulls in several packages to support PNG and canvas output this app doesn't
 need.
+
+## Update: a third dependency, this one not installed (2026-10-11)
+
+The design pass gave the app a voice: Bricolage Grotesque for display, DM Sans
+for text, both loaded from Google Fonts in `page()`. That's a runtime
+dependency the two above aren't — it isn't in `package.json`, it's a request
+every visitor's browser makes to a third party. It went in with the design and
+wasn't written down, which is the gap this closes.
+
+Kept, rather than self-hosted, because self-hosting means font files in the
+repo, a static-file route the app deliberately doesn't have, and a Dockerfile
+that copies more than `src/` and `README.md` — real machinery for a typeface.
+Both stacks fall back to `system-ui`, so a blocked or slow CDN costs the look
+and nothing else: no layout shift worth the name, no broken page.
+
+What it does cost, honestly: Google sees the IP of everyone who opens the app.
+For an app whose fifth commitment is that outsiders see nothing, that deserved
+a second look. The leak is the visit, not the content — `Referrer-Policy` is
+now set to `strict-origin-when-cross-origin` in `send()`, so only the origin
+crosses over, never a path carrying a meetup id or an activity someone named.
+Browsers default to that already; setting it makes it true of the old ones too.
+
+If that trade stops being worth it, self-hosting is a route, two woff2 files
+and a Dockerfile line — not a rewrite.

@@ -68,10 +68,6 @@ interface Stream {
 
 const streams = new Set<Stream>();
 
-export function openCount(): number {
-  return streams.size;
-}
-
 // Fly's proxy sets fly-client-ip. x-forwarded-for is attacker-controlled on the
 // left, so it is never consulted.
 function clientIp(req: IncomingMessage): string {

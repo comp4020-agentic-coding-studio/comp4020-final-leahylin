@@ -48,6 +48,10 @@ function send(res: ServerResponse, status: number, html: string): void {
   res.writeHead(status, {
     "content-type": "text/html; charset=utf-8",
     "cache-control": "no-store",
+    // Pages load webfonts from Google, and a path here can carry a meetup id
+    // or an activity someone named. New browsers send only the origin to
+    // another site; old ones send the whole URL. Say it, don't assume it.
+    "referrer-policy": "strict-origin-when-cross-origin",
   });
   res.end(html);
 }
