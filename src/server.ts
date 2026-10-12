@@ -472,22 +472,32 @@ async function handle(
 
   if (path === "/circles" && method === "POST") {
     const name = clean((await form(req)).get("name"), 40);
-    if (!name)
+    ctx.action = "create_circle";
+    if (!name) {
+      ctx.result = "denied";
+      ctx.reason = "bad_name";
       return showPeople(400, {
         circleError: "Give the circle a name people will recognise.",
       });
-    return redirect(res, `/c/${db.createCircle(name, me.id)}`);
+    }
+    const id = db.createCircle(name, me.id);
+    ctx.result = "ok";
+    ctx.circle = id;
+    return redirect(res, `/c/${id}`);
   }
 
   // Joining by the 6-digit number: it only finds the circle, then goes to the
   // same "Join X?" page as the link. Wrong guesses count toward a lock.
   if (path === "/circles/code" && method === "POST") {
     const typed = ((await form(req)).get("code") ?? "").replace(/\s+/g, "");
+    ctx.action = "circle_code";
     const show = (status: number, error: string) =>
       showPeople(status, { code: { value: typed.slice(0, 7), error } });
     const until = db.codeLockedUntil(me.id, now);
     if (until !== null) {
       const mins = Math.max(1, Math.ceil((until - now) / 60000));
+      ctx.result = "denied";
+      ctx.reason = "locked";
       return show(
         429,
         `Too many wrong codes. Wait ${mins} minute${mins === 1 ? "" : "s"} and try again.`,
@@ -496,11 +506,15 @@ async function handle(
     const circle = /^\d{6}$/.test(typed) ? db.circleByNumber(typed) : null;
     if (!circle) {
       db.recordCodeFailure(me.id, now);
+      ctx.result = "denied";
+      ctx.reason = "not_found";
       return show(
         404,
         "That code doesn't match a circle. Check it with someone in the circle.",
       );
     }
+    ctx.result = "ok";
+    ctx.circle = circle.id;
     if (db.isCircleMember(circle.id, me.id))
       return redirect(res, `/c/${circle.id}`);
     return redirect(res, `/join/${circle.invite_code}`);
@@ -533,14 +547,23 @@ async function handle(
 
   if ((m = /^\/c\/(\d+)\/(leave|reset)$/.exec(path)) && method === "POST") {
     const id = Number(m[1]);
-    if (!db.circleForMember(id, me.id)) return notFound(res, who);
+    ctx.action = m[2] === "leave" ? "leave_circle" : "reset_invite";
+    ctx.circle = id;
+    if (!db.circleForMember(id, me.id)) {
+      ctx.result = "denied";
+      ctx.reason = "not_member";
+      return notFound(res, who);
+    }
     if (m[2] === "leave") {
       db.leaveCircle(id, me.id);
+      ctx.result = "ok";
       tellCircle(id);
       tellPerson(me.id);
       return redirect(res, "/people#circles");
     }
-    if (!db.resetInvite(id, me.id))
+    if (!db.resetInvite(id, me.id)) {
+      ctx.result = "denied";
+      ctx.reason = "not_owner";
       return send(
         res,
         403,
@@ -554,6 +577,8 @@ async function handle(
           ),
         }),
       );
+    }
+    ctx.result = "ok";
     tellCircle(id);
     return redirect(res, `/c/${id}`);
   }
@@ -591,8 +616,15 @@ async function handle(
     }
     if (method === "POST") {
       const joined = db.joinCircle(code, me.id);
-      if (joined.result === "missing") return gone();
-      if (joined.result === "full")
+      ctx.action = "join_circle";
+      if (joined.result === "missing") {
+        ctx.result = "denied";
+        ctx.reason = "missing";
+        return gone();
+      }
+      if (joined.result === "full") {
+        ctx.result = "denied";
+        ctx.reason = "full";
         return send(
           res,
           409,
@@ -606,6 +638,9 @@ async function handle(
             ),
           }),
         );
+      }
+      ctx.circle = joined.id;
+      ctx.result = "ok";
       if (joined.result === "joined") {
         tellCircle(joined.id);
         tellPerson(me.id);
@@ -622,24 +657,34 @@ async function handle(
       .toLowerCase()
       .slice(0, 40);
     const asked = db.askFriend(me.id, username, now);
+    ctx.action = "add_friend";
+    ctx.reason = asked.result;
     const show = (status: number, error: string) =>
       showPeople(status, { username, friendError: error });
     switch (asked.result) {
       case "missing":
+        ctx.result = "denied";
         return show(
           404,
           `There's no one with the username "${username}". Check the spelling with them.`,
         );
       case "self":
+        ctx.result = "denied";
         return show(400, "That's you.");
       case "already_friends":
+        ctx.result = "denied";
+        ctx.other = asked.who.id;
         return show(409, `You and ${asked.who.name} are already friends.`);
       case "already_asked":
+        ctx.result = "denied";
+        ctx.other = asked.who.id;
         return show(
           409,
           `You've already asked ${asked.who.name}. It's up to them now.`,
         );
       case "too_soon": {
+        ctx.result = "denied";
+        ctx.other = asked.who.id;
         const days = Math.max(1, Math.ceil((asked.until - now) / 86400000));
         return show(
           429,
@@ -647,9 +692,13 @@ async function handle(
         );
       }
       case "became_friends":
+        ctx.result = "ok";
+        ctx.other = asked.who.id;
         tellPerson(asked.who.id, me.id);
         return redirect(res, "/people?done=friends#friends");
       case "sent":
+        ctx.result = "ok";
+        ctx.other = asked.who.id;
         tellPerson(asked.who.id, me.id);
         return redirect(res, "/people?done=sent#friends");
     }
@@ -660,15 +709,22 @@ async function handle(
     method === "POST"
   ) {
     const other = Number(m[1]);
+    ctx.action = `friend_${m[2]}`;
+    ctx.other = other;
     // both people's pages move; neither gets a message, as before
     if (m[2] === "accept") {
       if (db.acceptFriend(me.id, other, now)) {
+        ctx.result = "ok";
         tellPerson(other, me.id);
         return redirect(res, "/people?done=friends#friends");
       }
-    } else if (m[2] === "decline") db.declineFriend(me.id, other);
-    else if (m[2] === "cancel") db.cancelFriendRequest(me.id, other);
-    else db.removeFriend(me.id, other);
+      ctx.result = "denied";
+    } else {
+      ctx.result = "ok";
+      if (m[2] === "decline") db.declineFriend(me.id, other);
+      else if (m[2] === "cancel") db.cancelFriendRequest(me.id, other);
+      else db.removeFriend(me.id, other);
+    }
     tellPerson(other, me.id);
     return redirect(res, "/people#friends");
   }
