@@ -309,14 +309,21 @@ async function handle(
     const password = f.get("password") ?? "";
     const values = { username, name };
     let error = "";
-    if (!auth.USERNAME.test(username))
+    let reason = "";
+    ctx.action = "signup";
+    if (!auth.USERNAME.test(username)) {
       error = "Usernames are 3 to 20 lowercase letters, numbers or _.";
-    else if (!name) error = "Add a display name, so people know who's coming.";
-    else if (
+      reason = "bad_username";
+    } else if (!name) {
+      error = "Add a display name, so people know who's coming.";
+      reason = "bad_name";
+    } else if (
       password.length < auth.MIN_PASSWORD ||
       password.length > auth.MAX_PASSWORD
-    )
+    ) {
       error = `Passwords are at least ${auth.MIN_PASSWORD} characters.`;
+      reason = "bad_password";
+    }
     let person: db.Person | null = null;
     if (!error) {
       person = db.createAccount(
@@ -325,12 +332,16 @@ async function handle(
         await auth.hashPassword(password),
       );
       // both are unique; say which one clashed (names ignore case)
-      if (!person)
+      if (!person) {
         error = db.nameTaken(name)
           ? "Someone already goes by that name. Try another, maybe with an initial."
           : "That username is taken. Try another.";
+        reason = "taken";
+      }
     }
-    if (error || !person)
+    if (error || !person) {
+      ctx.result = "denied";
+      ctx.reason = reason;
       return send(
         res,
         400,
@@ -340,6 +351,9 @@ async function handle(
           body: views.signupForm(next, values, error),
         }),
       );
+    }
+    ctx.result = "ok";
+    ctx.user = `${person.username}#${person.id}`;
     return redirect(res, next, {
       "set-cookie": sessionCookie(req, db.createSession(person.id), SESSION_S),
     });
@@ -353,6 +367,8 @@ async function handle(
       .toLowerCase()
       .slice(0, 40);
     const password = (f.get("password") ?? "").slice(0, auth.MAX_PASSWORD);
+    ctx.action = "login";
+    ctx.user = username;
     const show = (status: number, error: string) =>
       send(
         res,
@@ -368,6 +384,8 @@ async function handle(
     const until = db.lockedUntil(username, now);
     if (until !== null) {
       const mins = Math.max(1, Math.ceil((until - now) / 60000));
+      ctx.result = "denied";
+      ctx.reason = "locked";
       return show(
         429,
         `Too many tries. Wait ${mins} minute${mins === 1 ? "" : "s"} and try again.`,
@@ -379,10 +397,14 @@ async function handle(
       : (await auth.burnTime(password), false);
     if (!ok || !row) {
       db.recordFailure(username, now);
+      ctx.result = "denied";
+      ctx.reason = "wrong";
       // one message for both, so it doesn't say which usernames exist
       return show(401, "Username or password is wrong.");
     }
     db.clearFailures(username);
+    ctx.result = "ok";
+    ctx.user = `${username}#${row.id}`;
     return redirect(res, next, {
       "set-cookie": sessionCookie(req, db.createSession(row.id), SESSION_S),
     });
@@ -390,6 +412,8 @@ async function handle(
 
   if (method === "POST" && path === "/logout") {
     const token = cookies(req)[COOKIE];
+    ctx.action = "logout";
+    ctx.result = "ok";
     if (token) db.deleteSession(token);
     return redirect(res, "/", { "set-cookie": sessionCookie(req, "", 0) });
   }
