@@ -8,7 +8,17 @@ import { marked } from "marked";
 import * as db from "./db.ts";
 import * as events from "./events.ts";
 import * as auth from "./auth.ts";
-import { canOpen, findInterest, INTERESTS, interestsFor, NEW_INTEREST, NEW_SLUG, readActivityName, type Interest } from "./interests.ts";
+import * as log from "./log.ts";
+import {
+  canOpen,
+  findInterest,
+  INTERESTS,
+  interestsFor,
+  NEW_INTEREST,
+  NEW_SLUG,
+  readActivityName,
+  type Interest,
+} from "./interests.ts";
 import { page, type Who } from "./html.ts";
 import { parseSydney, toSydneyInput } from "./time.ts";
 import * as views from "./views.ts";
@@ -18,7 +28,11 @@ import { qrSvg } from "./qr.ts";
 const COOKIE = "buddyup_session";
 const SESSION_S = db.SESSION_DAYS * 24 * 60 * 60;
 
-function sessionCookie(req: IncomingMessage, token: string, maxAge: number): string {
+function sessionCookie(
+  req: IncomingMessage,
+  token: string,
+  maxAge: number,
+): string {
   const secure = req.headers["x-forwarded-proto"] === "https" ? "; Secure" : "";
   return `${COOKIE}=${token}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${secure}`;
 }
@@ -112,7 +126,10 @@ function tellPerson(...ids: number[]): void {
   for (const id of ids) events.publish([`p:${id}`], (pid) => pid === id);
 }
 function tellCircle(circleId: number): void {
-  events.publish([`c:${circleId}`], (pid) => pid !== null && db.isCircleMember(circleId, pid));
+  events.publish(
+    [`c:${circleId}`],
+    (pid) => pid !== null && db.isCircleMember(circleId, pid),
+  );
 }
 
 // A meetup for an activity beyond the three can add that activity to its
@@ -138,7 +155,10 @@ function announce(m: { id: number; interest: string }): void {
 
 // What the host form offers under "Who's it for?"
 function audienceChoices(personId: number): views.AudienceChoices {
-  return { circles: db.myCircles(personId), friends: db.friendsOf(personId).length };
+  return {
+    circles: db.myCircles(personId),
+    friends: db.friendsOf(personId).length,
+  };
 }
 
 function readmeHtml(): string {
@@ -160,10 +180,32 @@ async function handle(
     ? {
         name: me.name,
         requests: db.incomingCount(me.id),
-        activities: listed.map(({ slug, name, colour }) => ({ slug, name, colour })),
+        activities: listed.map(({ slug, name, colour }) => ({
+          slug,
+          name,
+          colour,
+        })),
       }
     : null;
   let m: RegExpExecArray | null;
+
+  // One log line per request, naming who made it and what came back — crit
+  // 10's requirement that the server tell two people apart from its logs
+  // alone (decision 0006). Route handlers below enrich `ctx` with the
+  // specific action, resource and allow/deny reason; this is what makes it
+  // one line rather than one per decision point.
+  const actor = me ? `${me.username}#${me.id}` : "anon";
+  const ctx: log.Fields = {};
+  res.once("finish", () =>
+    log.emit({
+      time: new Date(now).toISOString(),
+      actor,
+      method,
+      path,
+      status: res.statusCode,
+      ...ctx,
+    }),
+  );
 
   // The live stream. Answers only in text/event-stream, including when it is
   // turning someone away — see events.decline for why a 503 would be worse
@@ -177,14 +219,23 @@ async function handle(
         const id = Number(t.slice(2));
         if (t.startsWith("m:") && !db.canSee(id, me.id)) topics.delete(t);
         if (t.startsWith("p:") && id !== me.id) topics.delete(t);
-        if (t.startsWith("c:") && !db.isCircleMember(id, me.id)) topics.delete(t);
+        if (t.startsWith("c:") && !db.isCircleMember(id, me.id))
+          topics.delete(t);
       }
+    // `finish` fires late on a long-lived stream (only once it closes), so
+    // this is logged as soon as the decision is made, not on disconnect.
+    ctx.action = "subscribe";
+    ctx.topics = [...topics].join(",") || undefined;
     if (
       topics.size === 0 ||
       !me ||
       !events.subscribe(req, res, topics, me?.id ?? null)
-    )
+    ) {
+      ctx.result = "declined";
       events.decline(res);
+    } else {
+      ctx.result = "ok";
+    }
     return;
   }
 
@@ -198,11 +249,27 @@ async function handle(
         who,
         // the counts for every interest, plus whatever you're going to
         topics: me
-          ? [...listed.map((i) => `i:${i.slug}`), ...mine.map((m) => `m:${m.id}`), `p:${me.id}`]
+          ? [
+              ...listed.map((i) => `i:${i.slug}`),
+              ...mine.map((m) => `m:${m.id}`),
+              `p:${me.id}`,
+            ]
           : undefined,
-        body: views.home(me, me ? db.upcomingCounts(now, me.id) : {}, mine, db.attendees, now,
-          me ? { circles: db.myCircles(me.id).length, friends: db.friendsOf(me.id).length, requests: who?.requests ?? 0 } : undefined,
-          listed),
+        body: views.home(
+          me,
+          me ? db.upcomingCounts(now, me.id) : {},
+          mine,
+          db.attendees,
+          now,
+          me
+            ? {
+                circles: db.myCircles(me.id).length,
+                friends: db.friendsOf(me.id).length,
+                requests: who?.requests ?? 0,
+              }
+            : undefined,
+          listed,
+        ),
       }),
     );
   }
@@ -221,8 +288,17 @@ async function handle(
   if (method === "GET" && (path === "/login" || path === "/signup")) {
     const next = safeNext(url.searchParams.get("next"));
     if (me) return redirect(res, next);
-    const body = path === "/login" ? views.loginForm(next) : views.signupForm(next);
-    return send(res, 200, page({ title: path === "/login" ? "Log in" : "Make an account", who, body }));
+    const body =
+      path === "/login" ? views.loginForm(next) : views.signupForm(next);
+    return send(
+      res,
+      200,
+      page({
+        title: path === "/login" ? "Log in" : "Make an account",
+        who,
+        body,
+      }),
+    );
   }
 
   if (method === "POST" && path === "/signup") {
@@ -236,11 +312,18 @@ async function handle(
     if (!auth.USERNAME.test(username))
       error = "Usernames are 3 to 20 lowercase letters, numbers or _.";
     else if (!name) error = "Add a display name, so people know who's coming.";
-    else if (password.length < auth.MIN_PASSWORD || password.length > auth.MAX_PASSWORD)
+    else if (
+      password.length < auth.MIN_PASSWORD ||
+      password.length > auth.MAX_PASSWORD
+    )
       error = `Passwords are at least ${auth.MIN_PASSWORD} characters.`;
     let person: db.Person | null = null;
     if (!error) {
-      person = db.createAccount(username, name, await auth.hashPassword(password));
+      person = db.createAccount(
+        username,
+        name,
+        await auth.hashPassword(password),
+      );
       // both are unique; say which one clashed (names ignore case)
       if (!person)
         error = db.nameTaken(name)
@@ -248,7 +331,15 @@ async function handle(
           : "That username is taken. Try another.";
     }
     if (error || !person)
-      return send(res, 400, page({ title: "Make an account", who, body: views.signupForm(next, values, error) }));
+      return send(
+        res,
+        400,
+        page({
+          title: "Make an account",
+          who,
+          body: views.signupForm(next, values, error),
+        }),
+      );
     return redirect(res, next, {
       "set-cookie": sessionCookie(req, db.createSession(person.id), SESSION_S),
     });
@@ -257,19 +348,35 @@ async function handle(
   if (method === "POST" && path === "/login") {
     const f = await form(req);
     const next = safeNext(f.get("next"));
-    const username = (f.get("username") ?? "").trim().toLowerCase().slice(0, 40);
+    const username = (f.get("username") ?? "")
+      .trim()
+      .toLowerCase()
+      .slice(0, 40);
     const password = (f.get("password") ?? "").slice(0, auth.MAX_PASSWORD);
     const show = (status: number, error: string) =>
-      send(res, status, page({ title: "Log in", who, body: views.loginForm(next, { username }, error) }));
+      send(
+        res,
+        status,
+        page({
+          title: "Log in",
+          who,
+          body: views.loginForm(next, { username }, error),
+        }),
+      );
 
     // Too many wrong guesses: refuse even the right password until it cools off.
     const until = db.lockedUntil(username, now);
     if (until !== null) {
       const mins = Math.max(1, Math.ceil((until - now) / 60000));
-      return show(429, `Too many tries. Wait ${mins} minute${mins === 1 ? "" : "s"} and try again.`);
+      return show(
+        429,
+        `Too many tries. Wait ${mins} minute${mins === 1 ? "" : "s"} and try again.`,
+      );
     }
     const row = db.loginRow(username);
-    const ok = row ? await auth.verifyPassword(password, row.pass_hash) : (await auth.burnTime(password), false);
+    const ok = row
+      ? await auth.verifyPassword(password, row.pass_hash)
+      : (await auth.burnTime(password), false);
     if (!ok || !row) {
       db.recordFailure(username, now);
       // one message for both, so it doesn't say which usernames exist
@@ -289,7 +396,11 @@ async function handle(
 
   // Everything past here is for people who are signed in. Nothing is public.
   if (!me) {
-    if (method === "GET") return redirect(res, `/login?next=${encodeURIComponent(path + url.search)}`);
+    if (method === "GET")
+      return redirect(
+        res,
+        `/login?next=${encodeURIComponent(path + url.search)}`,
+      );
     return redirect(res, "/login");
   }
 
@@ -297,10 +408,26 @@ async function handle(
   // A form that fails re-renders this page with its error beside that form.
   const showPeople = (status: number, forms: views.PeopleForms = {}) => {
     const circles = db.myCircles(me.id);
-    return send(res, status, page({ title: "People · Buddy Up", who,
-      // only a 200 from a GET is safe to re-fetch live (see page())
-      topics: status === 200 ? [`p:${me.id}`, ...circles.map((c) => `c:${c.id}`)] : undefined,
-      body: views.peoplePage(circles, db.friendsOf(me.id), db.incomingRequests(me.id), db.outgoingRequests(me.id), forms) }));
+    return send(
+      res,
+      status,
+      page({
+        title: "People · Buddy Up",
+        who,
+        // only a 200 from a GET is safe to re-fetch live (see page())
+        topics:
+          status === 200
+            ? [`p:${me.id}`, ...circles.map((c) => `c:${c.id}`)]
+            : undefined,
+        body: views.peoplePage(
+          circles,
+          db.friendsOf(me.id),
+          db.incomingRequests(me.id),
+          db.outgoingRequests(me.id),
+          forms,
+        ),
+      }),
+    );
   };
 
   if (path === "/people" && method === "GET") {
@@ -322,7 +449,9 @@ async function handle(
   if (path === "/circles" && method === "POST") {
     const name = clean((await form(req)).get("name"), 40);
     if (!name)
-      return showPeople(400, { circleError: "Give the circle a name people will recognise." });
+      return showPeople(400, {
+        circleError: "Give the circle a name people will recognise.",
+      });
     return redirect(res, `/c/${db.createCircle(name, me.id)}`);
   }
 
@@ -335,14 +464,21 @@ async function handle(
     const until = db.codeLockedUntil(me.id, now);
     if (until !== null) {
       const mins = Math.max(1, Math.ceil((until - now) / 60000));
-      return show(429, `Too many wrong codes. Wait ${mins} minute${mins === 1 ? "" : "s"} and try again.`);
+      return show(
+        429,
+        `Too many wrong codes. Wait ${mins} minute${mins === 1 ? "" : "s"} and try again.`,
+      );
     }
     const circle = /^\d{6}$/.test(typed) ? db.circleByNumber(typed) : null;
     if (!circle) {
       db.recordCodeFailure(me.id, now);
-      return show(404, "That code doesn't match a circle. Check it with someone in the circle.");
+      return show(
+        404,
+        "That code doesn't match a circle. Check it with someone in the circle.",
+      );
     }
-    if (db.isCircleMember(circle.id, me.id)) return redirect(res, `/c/${circle.id}`);
+    if (db.isCircleMember(circle.id, me.id))
+      return redirect(res, `/c/${circle.id}`);
     return redirect(res, `/join/${circle.invite_code}`);
   }
 
@@ -350,11 +486,25 @@ async function handle(
     // to anyone outside it, a circle doesn't exist
     const circle = db.circleForMember(Number(m[1]), me.id);
     if (!circle) return notFound(res, who);
-    const proto = req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+    const proto =
+      req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
     const link = `${proto}://${req.headers.host ?? "localhost"}/join/${circle.invite_code}`;
-    return send(res, 200, page({ title: `${circle.name} · Buddy Up`, who,
-      topics: [`c:${circle.id}`, `p:${me.id}`],
-      body: views.circlePage(circle, db.circleMembers(circle.id), me, link, qrSvg(link, "QR code for the invite link")) }));
+    return send(
+      res,
+      200,
+      page({
+        title: `${circle.name} · Buddy Up`,
+        who,
+        topics: [`c:${circle.id}`, `p:${me.id}`],
+        body: views.circlePage(
+          circle,
+          db.circleMembers(circle.id),
+          me,
+          link,
+          qrSvg(link, "QR code for the invite link"),
+        ),
+      }),
+    );
   }
 
   if ((m = /^\/c\/(\d+)\/(leave|reset)$/.exec(path)) && method === "POST") {
@@ -367,8 +517,19 @@ async function handle(
       return redirect(res, "/people#circles");
     }
     if (!db.resetInvite(id, me.id))
-      return send(res, 403, page({ title: "Not yours", who,
-        body: views.message("Only the person who started it", "Only the circle's owner can reset its link.", `/c/${id}`) }));
+      return send(
+        res,
+        403,
+        page({
+          title: "Not yours",
+          who,
+          body: views.message(
+            "Only the person who started it",
+            "Only the circle's owner can reset its link.",
+            `/c/${id}`,
+          ),
+        }),
+      );
     tellCircle(id);
     return redirect(res, `/c/${id}`);
   }
@@ -376,20 +537,51 @@ async function handle(
   if ((m = /^\/join\/([A-Za-z0-9_-]{6,40})$/.exec(path))) {
     const code = m[1];
     const gone = () =>
-      send(res, 404, page({ title: "Link expired", who,
-        body: views.message("This invite link doesn't work", "It may have been reset. Ask someone in the circle for a fresh one.", "/people#circles") }));
+      send(
+        res,
+        404,
+        page({
+          title: "Link expired",
+          who,
+          body: views.message(
+            "This invite link doesn't work",
+            "It may have been reset. Ask someone in the circle for a fresh one.",
+            "/people#circles",
+          ),
+        }),
+      );
     if (method === "GET") {
       const circle = db.circleByCode(code);
       if (!circle) return gone();
-      if (db.isCircleMember(circle.id, me.id)) return redirect(res, `/c/${circle.id}`);
-      return send(res, 200, page({ title: `Join ${circle.name}`, who, body: views.joinPage(circle, code) }));
+      if (db.isCircleMember(circle.id, me.id))
+        return redirect(res, `/c/${circle.id}`);
+      return send(
+        res,
+        200,
+        page({
+          title: `Join ${circle.name}`,
+          who,
+          body: views.joinPage(circle, code),
+        }),
+      );
     }
     if (method === "POST") {
       const joined = db.joinCircle(code, me.id);
       if (joined.result === "missing") return gone();
       if (joined.result === "full")
-        return send(res, 409, page({ title: "Full", who,
-          body: views.message("This circle is full", `A circle holds at most ${db.CIRCLE_MAX} people, so everyone in it can know each other.`, "/people#circles") }));
+        return send(
+          res,
+          409,
+          page({
+            title: "Full",
+            who,
+            body: views.message(
+              "This circle is full",
+              `A circle holds at most ${db.CIRCLE_MAX} people, so everyone in it can know each other.`,
+              "/people#circles",
+            ),
+          }),
+        );
       if (joined.result === "joined") {
         tellCircle(joined.id);
         tellPerson(me.id);
@@ -400,22 +592,35 @@ async function handle(
 
   // ---- Friends (decision 4, step 3) ----
   if (path === "/friends" && method === "POST") {
-    const username = ((await form(req)).get("username") ?? "").trim().replace(/^@/, "").toLowerCase().slice(0, 40);
+    const username = ((await form(req)).get("username") ?? "")
+      .trim()
+      .replace(/^@/, "")
+      .toLowerCase()
+      .slice(0, 40);
     const asked = db.askFriend(me.id, username, now);
     const show = (status: number, error: string) =>
       showPeople(status, { username, friendError: error });
     switch (asked.result) {
       case "missing":
-        return show(404, `There's no one with the username "${username}". Check the spelling with them.`);
+        return show(
+          404,
+          `There's no one with the username "${username}". Check the spelling with them.`,
+        );
       case "self":
         return show(400, "That's you.");
       case "already_friends":
         return show(409, `You and ${asked.who.name} are already friends.`);
       case "already_asked":
-        return show(409, `You've already asked ${asked.who.name}. It's up to them now.`);
+        return show(
+          409,
+          `You've already asked ${asked.who.name}. It's up to them now.`,
+        );
       case "too_soon": {
         const days = Math.max(1, Math.ceil((asked.until - now) / 86400000));
-        return show(429, `You asked ${asked.who.name} recently. You can ask again in ${days} day${days === 1 ? "" : "s"}.`);
+        return show(
+          429,
+          `You asked ${asked.who.name} recently. You can ask again in ${days} day${days === 1 ? "" : "s"}.`,
+        );
       }
       case "became_friends":
         tellPerson(asked.who.id, me.id);
@@ -426,7 +631,10 @@ async function handle(
     }
   }
 
-  if ((m = /^\/friends\/(\d+)\/(accept|decline|cancel|remove)$/.exec(path)) && method === "POST") {
+  if (
+    (m = /^\/friends\/(\d+)\/(accept|decline|cancel|remove)$/.exec(path)) &&
+    method === "POST"
+  ) {
     const other = Number(m[1]);
     // both people's pages move; neither gets a message, as before
     if (m[2] === "accept") {
@@ -443,8 +651,24 @@ async function handle(
 
   // Starting something that isn't listed: the host form plus a name for it.
   if (path === `/i/${NEW_SLUG}` && method === "GET") {
-    return send(res, 200, page({ title: "Something else · Buddy Up", who,
-      body: views.newActivityPage(views.hostForm(NEW_INTEREST, now, {}, "", undefined, audienceChoices(me.id))) }));
+    return send(
+      res,
+      200,
+      page({
+        title: "Something else · Buddy Up",
+        who,
+        body: views.newActivityPage(
+          views.hostForm(
+            NEW_INTEREST,
+            now,
+            {},
+            "",
+            undefined,
+            audienceChoices(me.id),
+          ),
+        ),
+      }),
+    );
   }
 
   if ((m = /^\/i\/([a-z0-9-]{1,32})$/.exec(path)) && method === "GET") {
@@ -478,17 +702,26 @@ async function handle(
     );
   }
 
-  if ((m = /^\/i\/([a-z0-9-]{1,32})\/meetups$/.exec(path)) && method === "POST") {
+  if (
+    (m = /^\/i\/([a-z0-9-]{1,32})\/meetups$/.exec(path)) &&
+    method === "POST"
+  ) {
     const isNew = m[1] === NEW_SLUG;
     const found = isNew ? NEW_INTEREST : findInterest(m[1]);
-    if (!found || (!isNew && !canOpen(found.slug, me.id))) return notFound(res, who);
+    if (!found || (!isNew && !canOpen(found.slug, me.id)))
+      return notFound(res, who);
     let interest: Interest = found;
     const f = await form(req);
     // a new one: the typed name, or the listed activity it already is
     const named = isNew ? readActivityName(f.get("what")) : null;
     const name = named && "slug" in named ? named : null;
     if (name) interest = findInterest(name.slug) ?? interest;
-    const { values, startsAt, capacity, error: formError } = readMeetupForm(f, now);
+    const {
+      values,
+      startsAt,
+      capacity,
+      error: formError,
+    } = readMeetupForm(f, now);
     // who it's for: "friends", or "circle:<id>" for a circle you're in
     const aud = f.get("audience") ?? "";
     const circleId = /^circle:(\d+)$/.exec(aud)?.[1];
@@ -497,14 +730,37 @@ async function handle(
     const error =
       (named?.error ?? "") ||
       formError ||
-      (audience === null ? "Say who it's for: one of your circles, or your friends." : "") ||
-      (audience === "circle" && !choices.circles.some((c) => c.id === Number(circleId))
+      (audience === null
+        ? "Say who it's for: one of your circles, or your friends."
+        : "") ||
+      (audience === "circle" &&
+      !choices.circles.some((c) => c.id === Number(circleId))
         ? "You can only post to a circle you're in."
         : "");
-    const valuesWithAudience = { ...values, audience: aud, what: f.get("what") ?? "" };
+    const valuesWithAudience = {
+      ...values,
+      audience: aud,
+      what: f.get("what") ?? "",
+    };
     if (error && isNew) {
-      return send(res, 400, page({ title: "Something else · Buddy Up", who,
-        body: views.newActivityPage(views.hostForm(NEW_INTEREST, now, valuesWithAudience, error, undefined, choices)) }));
+      return send(
+        res,
+        400,
+        page({
+          title: "Something else · Buddy Up",
+          who,
+          body: views.newActivityPage(
+            views.hostForm(
+              NEW_INTEREST,
+              now,
+              valuesWithAudience,
+              error,
+              undefined,
+              choices,
+            ),
+          ),
+        }),
+      );
     }
     if (error) {
       const list = db.upcoming(interest.slug, now, me.id);
@@ -518,7 +774,14 @@ async function handle(
         going,
         db.finished(interest.slug, now, me.id),
         now,
-        views.hostForm(interest, now, valuesWithAudience, error, undefined, choices),
+        views.hostForm(
+          interest,
+          now,
+          valuesWithAudience,
+          error,
+          undefined,
+          choices,
+        ),
       );
       return send(
         res,
@@ -534,7 +797,10 @@ async function handle(
     // made only now, with a meetup to show it to: an activity is never listed
     // with nothing in it
     if (name && interest.slug === NEW_SLUG)
-      interest = { ...interest, ...db.ensureActivity(name.slug, name.name, me.id, now) };
+      interest = {
+        ...interest,
+        ...db.ensureActivity(name.slug, name.name, me.id, now),
+      };
     const id = db.createMeetup({
       audience: audience!,
       circleId: audience === "circle" ? Number(circleId) : null,
@@ -549,7 +815,10 @@ async function handle(
     if (id === null) return redirect(res, `/i/${interest.slug}`);
     // nobody is watching m:<id> yet — it didn't exist a moment ago; and only
     // its audience hears that the list moved
-    events.publish([`i:${interest.slug}`], (pid) => pid !== null && db.canSee(id, pid));
+    events.publish(
+      [`i:${interest.slug}`],
+      (pid) => pid !== null && db.canSee(id, pid),
+    );
     tellActivityAudience(id);
     return redirect(res, `/i/${interest.slug}#m${id}`);
   }
@@ -559,11 +828,18 @@ async function handle(
     if (!meetup) return notFound(res, who);
     const interest = findInterest(meetup.interest)!;
     const going = db.isGoing(meetup.id, me.id);
-    const body = views.meetupPage(meetup, me, going, db.attendees(meetup.id), now, {
-      // notes are for people going only: anyone else gets no list at all
-      notes: going ? db.notesFor(meetup.id, now) : null,
-      myCame: going && db.myCheckIn(meetup.id, me.id),
-    });
+    const body = views.meetupPage(
+      meetup,
+      me,
+      going,
+      db.attendees(meetup.id),
+      now,
+      {
+        // notes are for people going only: anyone else gets no list at all
+        notes: going ? db.notesFor(meetup.id, now) : null,
+        myCame: going && db.myCheckIn(meetup.id, me.id),
+      },
+    );
     return send(
       res,
       200,
@@ -618,7 +894,11 @@ async function handle(
         }),
       );
     }
-    const editing = { id: meetup.id, going: meetup.going, audienceLabel: views.audienceLabel(meetup) };
+    const editing = {
+      id: meetup.id,
+      going: meetup.going,
+      audienceLabel: views.audienceLabel(meetup),
+    };
     const show = (status: number, values: views.HostFormValues, error = "") =>
       send(
         res,
@@ -680,38 +960,109 @@ async function handle(
     if (m[2] === "notes") {
       // a quick reply must be one of the offered emoji; anything else is typed
       const quick = f.get("quick");
-      if (quick !== null && !db.QUICK_REPLIES.includes(quick) && !db.QUICK_NOTES.includes(quick))
-        return send(res, 400, page({ title: "Notes", who, body: views.message("Not a quick reply", "Type it in the box instead.", back) }));
+      if (
+        quick !== null &&
+        !db.QUICK_REPLIES.includes(quick) &&
+        !db.QUICK_NOTES.includes(quick)
+      )
+        return send(
+          res,
+          400,
+          page({
+            title: "Notes",
+            who,
+            body: views.message(
+              "Not a quick reply",
+              "Type it in the box instead.",
+              back,
+            ),
+          }),
+        );
       const body = quick ?? clean(f.get("body"), db.NOTE_MAX);
       if (!body) return redirect(res, back);
-      const replyTo = /^\d+$/.test(f.get("reply_to") ?? "") ? Number(f.get("reply_to")) : null;
+      const replyTo = /^\d+$/.test(f.get("reply_to") ?? "")
+        ? Number(f.get("reply_to"))
+        : null;
       const posted = db.addNote(meetup.id, me.id, body, now, replyTo);
       if (posted === "bad_reply")
-        return send(res, 400, page({ title: "Notes", who,
-          body: views.message("Can't reply to that", "Replies go under a note, one level deep.", back) }));
+        return send(
+          res,
+          400,
+          page({
+            title: "Notes",
+            who,
+            body: views.message(
+              "Can't reply to that",
+              "Replies go under a note, one level deep.",
+              back,
+            ),
+          }),
+        );
       if (posted === "not_going")
-        return send(res, 403, page({ title: "Notes", who,
-          body: views.message("Only for people going", "Join this meetup to post a note to the group.", back) }));
+        return send(
+          res,
+          403,
+          page({
+            title: "Notes",
+            who,
+            body: views.message(
+              "Only for people going",
+              "Join this meetup to post a note to the group.",
+              back,
+            ),
+          }),
+        );
       // only people going hear about a note
-      events.publish([`m:${meetup.id}`], (pid) => pid !== null && db.isGoing(meetup.id, pid));
+      events.publish(
+        [`m:${meetup.id}`],
+        (pid) => pid !== null && db.isGoing(meetup.id, pid),
+      );
       return redirect(res, `${back}#note`);
     }
     const result = db.checkIn(meetup.id, me.id, f.get("came") === "1", now);
     if (result === "not_going")
-      return send(res, 403, page({ title: "Check-in", who,
-        body: views.message("Only for people going", "Check-in is for people who joined this meetup.", back) }));
+      return send(
+        res,
+        403,
+        page({
+          title: "Check-in",
+          who,
+          body: views.message(
+            "Only for people going",
+            "Check-in is for people who joined this meetup.",
+            back,
+          ),
+        }),
+      );
     if (result === "closed")
-      return send(res, 409, page({ title: "Check-in", who,
-        body: views.message("Check-in isn't open", "It opens at the start time and closes an hour later.", back) }));
+      return send(
+        res,
+        409,
+        page({
+          title: "Check-in",
+          who,
+          body: views.message(
+            "Check-in isn't open",
+            "It opens at the start time and closes an hour later.",
+            back,
+          ),
+        }),
+      );
     if (result === "missing") return notFound(res, who);
     announce(meetup);
     return redirect(res, back);
   }
 
-  if ((m = /^\/m\/(\d+)\/notes\/(\d+)\/delete$/.exec(path)) && method === "POST") {
+  if (
+    (m = /^\/m\/(\d+)\/notes\/(\d+)\/delete$/.exec(path)) &&
+    method === "POST"
+  ) {
     const meetupId = db.deleteNote(Number(m[2]), me.id);
     if (meetupId === null) return notFound(res, who);
-    events.publish([`m:${meetupId}`], (pid) => pid !== null && db.isGoing(meetupId, pid));
+    events.publish(
+      [`m:${meetupId}`],
+      (pid) => pid !== null && db.isGoing(meetupId, pid),
+    );
     return redirect(res, `/m/${meetupId}#note`);
   }
 
@@ -803,7 +1154,10 @@ async function handle(
     }
     // back to the page the button was on; anything else goes to the interest
     const from = (await form(req)).get("from");
-    const to = from === "/" || from === `/m/${meetup.id}` ? from : `/i/${meetup.interest}`;
+    const to =
+      from === "/" || from === `/m/${meetup.id}`
+        ? from
+        : `/i/${meetup.interest}`;
     return redirect(res, to);
   }
 
