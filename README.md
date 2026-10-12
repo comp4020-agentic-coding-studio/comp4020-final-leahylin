@@ -74,6 +74,9 @@ Only judged:
 - *Is joining quick?* I'll time my pod.
 - *Does it feel light?* The crit will say.
 - *Do meetups happen?* Check-ins count it.
+- *Can a crit presenter tell two people apart, and see a denied action,
+  from the logs alone?* The crit demo answers this directly
+  ([decision 6](docs/decisions/0006-action-logging.md)).
 
 ## What I read and looked at
 

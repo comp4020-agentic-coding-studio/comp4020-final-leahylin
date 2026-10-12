@@ -50,6 +50,10 @@ around a rule; argue for changing the README first.
   never used to decide who did something.
 - **Never render user text unescaped.** Every nickname, place and note goes
   through `esc()` in `src/html.ts`.
+- **Never log a password, note, or reply body.** Server logs carry only
+  identifiers and short result codes, never free text someone typed.
+  `src/log.ts`'s `format()` throws if a call site tries
+  ([decision 6](docs/decisions/0006-action-logging.md)).
 
 ## What every page holds to
 
