@@ -196,16 +196,19 @@ async function handle(
   // one line rather than one per decision point.
   const actor = me ? `${me.username}#${me.id}` : "anon";
   const ctx: log.Fields = {};
-  res.once("finish", () =>
+  res.once("finish", () => {
+    // signed in, but asking for a meetup or circle they can't see
+    if (me && res.statusCode === 404 && ctx.action === undefined)
+      Object.assign(ctx, log.notVisible(path) ?? {});
     log.emit({
       time: new Date(now).toISOString(),
       actor,
       method,
-      path,
+      path: log.logPath(path),
       status: res.statusCode,
       ...ctx,
-    }),
-  );
+    });
+  });
 
   // The live stream. Answers only in text/event-stream, including when it is
   // turning someone away — see events.decline for why a 503 would be worse

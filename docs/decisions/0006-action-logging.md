@@ -33,6 +33,14 @@ said who did what, or who was turned away.
 - **`/events` is a special case.** It's a long-lived SSE connection, so
   `finish` only fires on disconnect, sometimes minutes later. Its
   subscribe/decline decision is logged immediately instead.
+- **An invite link's code is masked** as `/join/[code]`. Anyone holding the
+  code can join the circle, and the crit puts the log on a projector;
+  `action=join_circle circle=<id>` already says what happened.
+- **Being turned away from something you can't see is logged as denied.**
+  The response is the same 404 as for something that doesn't exist, so it
+  gives nothing away, but the line adds `action=view_meetup` (or
+  `join_meetup`, `view_circle`, ...) `result=denied reason=not_visible`, so
+  the presenter can point at an outsider being stopped.
 - **`src/log.ts`'s `format()` refuses to log a password, note, body or
   message field** — it throws if asked to. This is a structural guardrail,
   not a convention: it extends CLAUDE.md's existing "never log a password"
@@ -56,7 +64,9 @@ said who did what, or who was turned away.
   decision points; no route's behaviour or response changes.
 - A future call site that tries to log a password, note, reply body or any
   field named `message` gets a thrown error instead of a leaked line.
-- No `spec/` test: logging isn't observable over HTTP, and
-  `vitest.config.ts` only runs tests against the running app's responses.
-  This is a judged-not-tested item, like several others in `README.md` —
-  the crit demo is the check.
+- The log can't be read over HTTP, so the app-facing spec can't check it.
+  `spec/log.test.ts` instead tests the pieces directly, like
+  `spec/auth.test.ts` does for hashing: the invite code is masked, an
+  unseen meetup or circle is logged as denied, and a password or note is
+  refused. Whether a presenter can narrate two people from the log stays a
+  judged item in `README.md`; the crit demo is that check.
