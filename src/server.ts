@@ -788,8 +788,12 @@ async function handle(
   ) {
     const isNew = m[1] === NEW_SLUG;
     const found = isNew ? NEW_INTEREST : findInterest(m[1]);
-    if (!found || (!isNew && !canOpen(found.slug, me.id)))
+    ctx.action = "create_meetup";
+    if (!found || (!isNew && !canOpen(found.slug, me.id))) {
+      ctx.result = "denied";
+      ctx.reason = "not_visible";
       return notFound(res, who);
+    }
     let interest: Interest = found;
     const f = await form(req);
     // a new one: the typed name, or the listed activity it already is
@@ -823,6 +827,8 @@ async function handle(
       what: f.get("what") ?? "",
     };
     if (error && isNew) {
+      ctx.result = "denied";
+      ctx.reason = "bad_form";
       return send(
         res,
         400,
@@ -843,6 +849,8 @@ async function handle(
       );
     }
     if (error) {
+      ctx.result = "denied";
+      ctx.reason = "bad_form";
       const list = db.upcoming(interest.slug, now, me.id);
       const going = new Set(
         list.filter((x) => db.isGoing(x.id, me.id)).map((x) => x.id),
@@ -892,7 +900,13 @@ async function handle(
       capacity,
       note: values.note,
     });
-    if (id === null) return redirect(res, `/i/${interest.slug}`);
+    if (id === null) {
+      ctx.result = "denied";
+      ctx.reason = "not_in_circle";
+      return redirect(res, `/i/${interest.slug}`);
+    }
+    ctx.result = "ok";
+    ctx.meetup = id;
     // nobody is watching m:<id> yet — it didn't exist a moment ago; and only
     // its audience hears that the list moved
     events.publish(
@@ -942,9 +956,13 @@ async function handle(
     const meetup = db.meetupFor(Number(m[1]), me.id);
     if (!meetup) return notFound(res, who);
     if (!me) return redirect(res, `/m/${meetup.id}`);
+    ctx.action = "edit_meetup";
+    ctx.meetup = meetup.id;
     const interest = findInterest(meetup.interest)!;
     const back = `/i/${meetup.interest}#m${meetup.id}`;
     if (meetup.host_id !== me.id) {
+      ctx.result = "denied";
+      ctx.reason = "not_host";
       return send(
         res,
         403,
@@ -960,6 +978,8 @@ async function handle(
       );
     }
     if (meetup.cancelled_at !== null || meetup.starts_at <= now) {
+      ctx.result = "denied";
+      ctx.reason = "too_late";
       return send(
         res,
         409,
@@ -995,6 +1015,7 @@ async function handle(
       );
 
     if (method === "GET") {
+      ctx.result = "ok";
       return show(200, {
         starts_at: toSydneyInput(meetup.starts_at),
         place: meetup.place,
@@ -1007,7 +1028,11 @@ async function handle(
       await form(req),
       now,
     );
-    if (error) return show(400, values, error);
+    if (error) {
+      ctx.result = "denied";
+      ctx.reason = "bad_form";
+      return show(400, values, error);
+    }
     const result = db.editMeetup(
       meetup.id,
       {
@@ -1020,6 +1045,8 @@ async function handle(
       now,
     );
     if (result === "too_small") {
+      ctx.result = "denied";
+      ctx.reason = "too_small";
       const going = db.getMeetup(meetup.id)?.going ?? meetup.going;
       return show(
         409,
@@ -1027,6 +1054,7 @@ async function handle(
         `${going} people are already going, so the head count can't go below ${going}.`,
       );
     }
+    ctx.result = "ok";
     if (result === "saved") announce(meetup);
     return redirect(res, back);
   }
@@ -1035,6 +1063,8 @@ async function handle(
   if ((m = /^\/m\/(\d+)\/(notes|checkin)$/.exec(path)) && method === "POST") {
     const meetup = db.meetupFor(Number(m[1]), me.id);
     if (!meetup) return notFound(res, who);
+    ctx.action = m[2] === "notes" ? "add_note" : "checkin";
+    ctx.meetup = meetup.id;
     const f = await form(req);
     const back = `/m/${meetup.id}`;
     if (m[2] === "notes") {
@@ -1044,7 +1074,9 @@ async function handle(
         quick !== null &&
         !db.QUICK_REPLIES.includes(quick) &&
         !db.QUICK_NOTES.includes(quick)
-      )
+      ) {
+        ctx.result = "denied";
+        ctx.reason = "bad_quick";
         return send(
           res,
           400,
@@ -1058,13 +1090,20 @@ async function handle(
             ),
           }),
         );
+      }
       const body = quick ?? clean(f.get("body"), db.NOTE_MAX);
-      if (!body) return redirect(res, back);
+      if (!body) {
+        ctx.result = "denied";
+        ctx.reason = "empty";
+        return redirect(res, back);
+      }
       const replyTo = /^\d+$/.test(f.get("reply_to") ?? "")
         ? Number(f.get("reply_to"))
         : null;
       const posted = db.addNote(meetup.id, me.id, body, now, replyTo);
-      if (posted === "bad_reply")
+      if (posted === "bad_reply") {
+        ctx.result = "denied";
+        ctx.reason = "bad_reply";
         return send(
           res,
           400,
@@ -1078,7 +1117,10 @@ async function handle(
             ),
           }),
         );
-      if (posted === "not_going")
+      }
+      if (posted === "not_going") {
+        ctx.result = "denied";
+        ctx.reason = "not_going";
         return send(
           res,
           403,
@@ -1092,6 +1134,8 @@ async function handle(
             ),
           }),
         );
+      }
+      ctx.result = "ok";
       // only people going hear about a note
       events.publish(
         [`m:${meetup.id}`],
@@ -1100,7 +1144,9 @@ async function handle(
       return redirect(res, `${back}#note`);
     }
     const result = db.checkIn(meetup.id, me.id, f.get("came") === "1", now);
-    if (result === "not_going")
+    if (result === "not_going") {
+      ctx.result = "denied";
+      ctx.reason = "not_going";
       return send(
         res,
         403,
@@ -1114,7 +1160,10 @@ async function handle(
           ),
         }),
       );
-    if (result === "closed")
+    }
+    if (result === "closed") {
+      ctx.result = "denied";
+      ctx.reason = "closed";
       return send(
         res,
         409,
@@ -1128,7 +1177,13 @@ async function handle(
           ),
         }),
       );
-    if (result === "missing") return notFound(res, who);
+    }
+    if (result === "missing") {
+      ctx.result = "denied";
+      ctx.reason = "missing";
+      return notFound(res, who);
+    }
+    ctx.result = "ok";
     announce(meetup);
     return redirect(res, back);
   }
@@ -1137,8 +1192,15 @@ async function handle(
     (m = /^\/m\/(\d+)\/notes\/(\d+)\/delete$/.exec(path)) &&
     method === "POST"
   ) {
+    ctx.action = "delete_note";
     const meetupId = db.deleteNote(Number(m[2]), me.id);
-    if (meetupId === null) return notFound(res, who);
+    if (meetupId === null) {
+      ctx.result = "denied";
+      ctx.reason = "not_allowed";
+      return notFound(res, who);
+    }
+    ctx.result = "ok";
+    ctx.meetup = meetupId;
     events.publish(
       [`m:${meetupId}`],
       (pid) => pid !== null && db.isGoing(meetupId, pid),
@@ -1155,10 +1217,19 @@ async function handle(
     if (!me) return redirect(res, `/m/${meetup.id}`);
     const back = `/i/${meetup.interest}#m${meetup.id}`;
     const action = m[2];
+    ctx.action =
+      action === "join"
+        ? "join_meetup"
+        : action === "leave"
+          ? "leave_meetup"
+          : "cancel_meetup";
+    ctx.meetup = meetup.id;
 
     if (action === "join") {
       const result = db.join(meetup.id, me.id, now);
       if (result === "full") {
+        ctx.result = "denied";
+        ctx.reason = "full";
         return send(
           res,
           409,
@@ -1174,6 +1245,8 @@ async function handle(
         );
       }
       if (result === "closed") {
+        ctx.result = "denied";
+        ctx.reason = "closed";
         return send(
           res,
           409,
@@ -1188,12 +1261,15 @@ async function handle(
           }),
         );
       }
+      ctx.result = "ok";
       // "already" means they were going before they asked; nothing moved
       if (result === "joined") announce(meetup);
       return redirect(res, back);
     }
 
     if (meetup.host_id === me.id && action === "leave") {
+      ctx.result = "denied";
+      ctx.reason = "hosting";
       return send(
         res,
         400,
@@ -1209,11 +1285,14 @@ async function handle(
       );
     }
     if (action === "leave") {
+      ctx.result = "ok";
       if (meetup.starts_at > now && db.leave(meetup.id, me.id))
         announce(meetup);
       return redirect(res, back);
     }
     if (meetup.host_id !== me.id) {
+      ctx.result = "denied";
+      ctx.reason = "not_host";
       return send(
         res,
         403,
@@ -1228,6 +1307,7 @@ async function handle(
         }),
       );
     }
+    ctx.result = "ok";
     if (db.cancel(meetup.id, now)) {
       announce(meetup);
       tellActivityAudience(meetup.id);
