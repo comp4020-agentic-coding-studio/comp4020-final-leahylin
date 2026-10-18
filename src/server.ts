@@ -114,10 +114,13 @@ function readMeetupForm(f: URLSearchParams, now: number) {
   return { values, startsAt: startsAt ?? 0, capacity, error };
 }
 
-// A meetup changing touches two places people may be looking at: the meetup
-// itself, and the list it sits in.
-function touched(m: { id: number; interest: string }): string[] {
-  return [`m:${m.id}`, `i:${m.interest}`];
+// A meetup changing touches the places people may be looking at: the meetup
+// itself, the list it sits in, and its circle's page if it was posted to one.
+type Touchable = { id: number; interest: string; audience_circle_id?: number | null };
+function touched(m: Touchable): string[] {
+  const topics = [`m:${m.id}`, `i:${m.interest}`];
+  if (m.audience_circle_id) topics.push(`c:${m.audience_circle_id}`);
+  return topics;
 }
 
 // Someone's own pages (friend requests, the nav count, their circles list),
@@ -149,7 +152,7 @@ function tellActivityAudience(meetupId: number): void {
 
 // Tell the pages watching a meetup that it changed, but only the people who
 // can see it (decision 4).
-function announce(m: { id: number; interest: string }): void {
+function announce(m: Touchable): void {
   events.publish(touched(m), (pid) => pid !== null && db.canSee(m.id, pid));
 }
 
@@ -543,6 +546,8 @@ async function handle(
           me,
           link,
           qrSvg(link, "QR code for the invite link"),
+          db.circleMeetups(circle.id, now, me.id).map((x) => ({ m: x, going: db.isGoing(x.id, me.id) })),
+          now,
         ),
       }),
     );
@@ -913,7 +918,7 @@ async function handle(
     // nobody is watching m:<id> yet — it didn't exist a moment ago; and only
     // its audience hears that the list moved
     events.publish(
-      [`i:${interest.slug}`],
+      touched({ id, interest: interest.slug, audience_circle_id: audience === "circle" ? Number(circleId) : null }).slice(1),
       (pid) => pid !== null && db.canSee(id, pid),
     );
     tellActivityAudience(id);

@@ -627,13 +627,21 @@ export function circlePage(
   me: Person,
   link: string,
   qr: string,
+  coming: { m: Meetup; going: boolean }[] = [],
+  now = Date.now(),
 ): string {
   const owner = c.owner_id === me.id;
+  // What a newcomer is here for: the circle's meetups, before the invite tools.
+  const list = coming.length
+    ? `<ul class="meetups grid">${coming.map(({ m, going }) => meetupCard(m, me, going, now, true, `/c/${c.id}`)).join("")}</ul>`
+    : `<p class="empty">Nothing on in this circle yet. Start one from Activities, and pick ${esc(c.name)} under "Who's it for?".</p>`;
   return `
 <p><a href="/people#circles">← Your circles</a></p>
 <h1>${esc(c.name)}</h1>
 <div data-live="circle">
 <p class="lede">${c.members} of ${CIRCLE_MAX} people${owner ? " · you started this one" : ""}</p>
+<h2>Coming up in this circle</h2>
+${list}
 <h2>Invite someone you know</h2>
 <p class="hint">Anyone with the code or the link can join while there's room. Only share them with people you'd be glad to meet.</p>
 <p class="join-number" aria-label="Join code">${spacedNumber(c.join_number)}</p>

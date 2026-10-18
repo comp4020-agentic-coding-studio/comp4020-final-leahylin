@@ -342,6 +342,10 @@ export function calledOffIn(interest: string, now: number, viewerId: number): Me
   return vq.calledOff.all({ interest, now, v: viewerId }) as unknown as Meetup[];
 }
 
+export function circleMeetups(circleId: number, now: number, viewerId: number): Meetup[] {
+  return vq.inCircle.all({ circle: circleId, since: now - RUNS_FOR_MS, v: viewerId }) as unknown as Meetup[];
+}
+
 export function finished(interest: string, now: number, viewerId: number): Meetup[] {
   return vq.finished.all({ interest, since: now - RUNS_FOR_MS, v: viewerId }) as unknown as Meetup[];
 }
@@ -845,6 +849,11 @@ const vq = {
   canSee: db.prepare(`SELECT 1 FROM meetups m WHERE m.id = $id AND ${VISIBLE}`),
   upcoming: db.prepare(`SELECT ${visibleCols} ${FROM}
     WHERE m.interest = $interest AND m.cancelled_at IS NULL AND m.starts_at > $since AND ${VISIBLE}
+    ORDER BY m.starts_at`),
+  // a circle's own meetups still to come, for its page
+  inCircle: db.prepare(`SELECT ${visibleCols} ${FROM}
+    WHERE m.audience = 'circle' AND m.audience_circle_id = $circle
+      AND m.cancelled_at IS NULL AND m.starts_at > $since AND ${VISIBLE}
     ORDER BY m.starts_at`),
   finished: db.prepare(`SELECT ${visibleCols} ${FROM}
     WHERE m.interest = $interest AND m.cancelled_at IS NULL AND m.starts_at <= $since AND ${VISIBLE}

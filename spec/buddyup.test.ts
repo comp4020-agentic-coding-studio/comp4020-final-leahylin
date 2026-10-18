@@ -1304,6 +1304,37 @@ describe("quick notes: one tap for the moment of meeting up", () => {
   });
 });
 
+describe("a circle's page: what's on in it, first", () => {
+  it("lists the circle's coming meetups for its members, with a way to join, and nothing posted elsewhere", async () => {
+    const hostP = await person();
+    const member = await person();
+    const cid = await circle(hostP.cookie);
+    expect((await joinCircle(member.cookie, await inviteCode(hostP.cookie, cid))).status).toBe(303);
+    const empty = await get(`/c/${cid}`, member.cookie);
+    expect(empty).toContain("Coming up in this circle");
+    expect(empty).toContain("Nothing on in this circle yet");
+
+    const inCircle = await postTo(hostP.cookie, `circle:${cid}`, {}, "coffee");
+    await befriend(hostP, member, hostP.username);
+    const toFriends = await postTo(hostP.cookie, "friends", {}, "coffee");
+    const html = await get(`/c/${cid}`, member.cookie);
+    expect(html).toContain(inCircle.place);
+    expect(html).toContain(`action="/m/${inCircle.id}/join"`);
+    // a friends-only meetup isn't this circle's
+    expect(html).not.toContain(toFriends.place);
+  });
+
+  it("tells the circle's open page when a meetup is posted to it", async () => {
+    const hostP = await person();
+    const member = await person();
+    const cid = await circle(hostP.cookie);
+    expect((await joinCircle(member.cookie, await inviteCode(hostP.cookie, cid))).status).toBe(303);
+    const watch = await listen(`c:${cid}`, member.cookie);
+    await postTo(hostP.cookie, `circle:${cid}`, {}, "coffee");
+    expect(await watch.next()).toContain("event: change");
+  });
+});
+
 describe("people: circles and friends on one page", () => {
   it("shows your circles, your friends and requests waiting for you together", async () => {
     const me = await person();
