@@ -88,6 +88,10 @@ button.link:focus-visible{outline:2px solid var(--link);outline-offset:2px}
 .invite{font-family:ui-monospace,Menlo,monospace;font-size:14px;background:var(--soft)}
 .inline-gap{margin:12px 0}
 .join-number{font-family:var(--display);font-weight:800;font-size:44px;letter-spacing:.08em;margin:8px 0 4px;color:var(--ink)}
+.side-card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px 18px;margin-top:18px}
+.side-card h2{margin-top:0}
+.side-card .qr-box .qr{width:132px;height:132px}
+.side-card .inline-gap .hint{display:block;margin-top:6px}
 .qr-box{margin:12px 0;display:flex;align-items:center;gap:14px}
 .qr-box .qr{width:160px;height:160px;flex:none;border:1px solid var(--line);border-radius:12px}
 .qr-box figcaption{margin:0}
@@ -204,6 +208,8 @@ main.wrap{padding-top:36px;padding-bottom:48px}
 .meetups.grid{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
 .side{margin-top:0;position:sticky;top:24px}
 .side .interests{grid-template-columns:1fr}
+.circle-side{position:static}
+.circle-side .side-card:first-child{margin-top:0}
 .next .inner{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:28px;padding:26px 28px}
 .next .big-when{font-size:56px}
 .fab,.mobile-only{display:none}

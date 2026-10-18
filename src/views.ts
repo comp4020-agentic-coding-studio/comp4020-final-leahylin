@@ -635,31 +635,48 @@ export function circlePage(
   const list = coming.length
     ? `<ul class="meetups grid">${coming.map(({ m, going }) => meetupCard(m, me, going, now, true, `/c/${c.id}`)).join("")}</ul>`
     : `<p class="empty">Nothing on in this circle yet. Start one from Activities, and pick ${esc(c.name)} under "Who's it for?".</p>`;
+  // Wide screen: the circle's meetups take the main column, and inviting
+  // and members sit in the side column, as on an interest page. On a phone
+  // the meetups still come first.
   return `
+<div class="cols">
+<div>
 <p><a href="/people#circles">← Your circles</a></p>
 <h1>${esc(c.name)}</h1>
 <div data-live="circle">
 <p class="lede">${c.members} of ${CIRCLE_MAX} people${owner ? " · you started this one" : ""}</p>
 <h2>Coming up in this circle</h2>
 ${list}
+</div>
+</div>
+<aside class="side circle-side">
+<section class="side-card">
 <h2>Invite someone you know</h2>
 <p class="hint">Anyone with the code or the link can join while there's room. Only share them with people you'd be glad to meet.</p>
+<div data-live="circle-invite">
 <p class="join-number" aria-label="Join code">${spacedNumber(c.join_number)}</p>
 <p class="hint">Type it in under People → Join with a code. Or send the link:</p>
 <label for="invite" class="sr-only">Invite link</label>
 <input id="invite" class="invite" readonly value="${esc(link)}">
 <figure class="qr-box">${qr}<figcaption class="hint">Or scan it with a phone camera to open the link.</figcaption></figure>
+</div>
 ${
   owner
     ? `<form method="post" action="/c/${c.id}/reset" class="inline-gap"><button class="quiet">Reset the link</button> <span class="hint">The old code and link stop working.</span></form>`
     : ""
 }
+</section>
+<section class="side-card">
 <h2>Who's in it</h2>
+<div data-live="circle-members">
 <ul class="people">${members
     .map((m) => `<li>${esc(m.name)}${m.id === c.owner_id ? " (started it)" : ""}</li>`)
     .join("")}</ul>
 </div>
-<form method="post" action="/c/${c.id}/leave" class="inline-gap"><button class="quiet">Leave this circle</button></form>`;
+<form method="post" action="/c/${c.id}/leave" class="inline-gap"><button class="quiet">Leave this circle</button></form>
+</section>
+</aside>
+</div>`;
 }
 
 // Opening an invite link only asks; joining is a button, so a chat app's link
