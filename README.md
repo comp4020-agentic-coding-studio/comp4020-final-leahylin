@@ -28,9 +28,9 @@ ANU students who know people but rarely make plans with them: classmates, hallma
 - **Direct messages:** the goal is to meet; notes belong to each meetup.
 - **Profiles, followers, likes, ratings:** no popularity contest. Names are unique and fixed.
 - **Search, maps, recommendations:** a time-ordered list is enough.
-- **Public activity or friend lists:** activities are discovered through meetups ([decision 5](docs/decisions/0005-custom-activities.md)); friend lists stay private.
+- **Public activity or friend lists:** activities are discovered through meetups ([decision 5](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/blob/main/docs/decisions/0005-custom-activities.md)); friend lists stay private.
 
-At Crit 8, I excluded accounts and friend lists to keep joining lightweight. A pod member pointed out that someone could end up alone with a stranger. I had prioritised convenience over safety, so I added accounts, circles and friends instead ([decision 4](docs/decisions/0004-accounts-circles-friends.md)).
+At Crit 8, I excluded accounts and friend lists to keep joining lightweight. A pod member pointed out that someone could end up alone with a stranger. I had prioritised convenience over safety, so I added accounts, circles and friends instead ([decision 4](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/blob/main/docs/decisions/0004-accounts-circles-friends.md)).
 
 ## What persists and what doesn't
 
@@ -54,13 +54,12 @@ Tested in `spec/` against the running app:
 - Notes are only for people going; quick replies are never added up.
 - Check-ins show only a count, never who.
 
-Other questions need people, not tests:
+Other questions need people, not tests（[what came of them](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/blob/main/spec/README.md#judged-readmes-questions-for-people-and-what-came-of-them)）:
 
-- *Is joining quick?* I'll time my pod.
-- *Does it feel lightweight?* The crit will tell.
-- *Do meetups happen?* Check-ins count it.
-- *Do the logs show who did what, including denied actions?*
-  ([decision 6](docs/decisions/0006-action-logging.md))
+- *Is joining quick?* Most participants finished in under 60 seconds or less.
+- *Does it feel lightweight?* One participant rated it 1 (very easy) in the retest.
+- *Do meetups happen?* Not tested in real life yet.
+- *Do the logs show who did what, including denied actions?* Yes, tested in a rehearsal. ([decision 6](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/blob/main/docs/decisions/0006-action-logging.md))
 
 ## What I read and looked at
 
