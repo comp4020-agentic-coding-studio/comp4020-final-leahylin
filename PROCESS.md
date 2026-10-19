@@ -1,115 +1,43 @@
 # Process overview
 
-*Crit 10 version. This file is rewritten at each crit.*
+*Final version.*
 
 ## From the brief to the harness
 
-Buddy Up is an **activity buddy finder** for ANU students: someone you know
-to run, play badminton, get coffee or try something else with this week.
-"Good" lives in three places that are meant to agree: `README.md` argues
-what good means, `CLAUDE.md` turns it into rules for the agent, and
-`spec/` tests what can be tested against the running app. Crit 8 made
-accounts, circles and friends part of good
-([decision 4](docs/decisions/0004-accounts-circles-friends.md)); crit 9 made
-it live and filled the gaps I found using it myself.
+The brief asks for a multi-user, real-time app that's good. I chose an **activity buddy finder** for ANU students: someone you know to run, play badminton, get coffee or try something else with this week. The agent warned early that this could easily turn into a small Meetup clone, so for Crit 8 I narrowed it to one campus, meetups within seven days, and no accounts.
 
-**Crit 10 asked for something the app couldn't do at all: be read from the
-outside.** A presenter has to narrate what two pod members are doing in
-separate browsers using only `flyctl logs`. Buddy Up had one startup line
-and one crash handler. Nothing said who did what, or who was turned away.
+Its definition of good came from a question I asked the agent: once people have agreed to meet, what actually gets them from the app to the meetup? Good became shortening the gap between wanting company and turning up: meetups that are concrete and near, one action to join or leave, a real head count, and an edit that says exactly what changed.
 
-The other half of the brief was already in place. What each person may see
-and change is checked on the server for every read and write, and decision 4
-says why: a meetup goes only to one circle or the host's friends, and only
-its host can edit or call it off. Crit 10 had to make those checks visible.
+I connected that definition to the implementation through three documents. `README.md` is the argument ([`9a64a3e`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/9a64a3e)), `CLAUDE.md` turns each commitment into a rule for the agent ([`7fba852`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/7fba852)), and `spec/` tests the rules that can be checked by sending real HTTP requests to the running app ([`ce1f84b`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/ce1f84b)). For the final, `spec/README.md` maps each README claim to the tests that enforce it (99, all passing) and records how the judged questions were assessed and what came of them ([`d68b656`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/d68b656)).
 
-The crit 9 session raised no feedback that called for a change, so this
-round's work came from the crit 10 brief and from running the app for real
-on crit day.
+## How good changed
 
-As before, I put the requirement into the harness before treating it as
-done ([decision 6](docs/decisions/0006-action-logging.md), [`b44d5e2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/b44d5e2)).
-`README.md` gained a judged question: *do the logs show who did what,
-including denied actions?* `CLAUDE.md` extended "never log a password" to
-note and reply text. Then the logging went in, one area at a time: one line
-per request naming the actor ([`17f5f09`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/17f5f09)), then sign-up and login
-([`efc706f`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/efc706f)), circles and friends ([`baf06d2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/baf06d2)), and meetups
-([`09f7c00`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/09f7c00)).
+**Crit 8 → 9: only people you know.** A pod member pointed out that anyone could see a meetup's time and place and turn up, even if the organiser didn't know them. My assumption that a low-friction app should not require accounts no longer held once I considered who could show up. I changed the harness first, before any code, rather than treating accounts and visibility checks as an unstructured bundle of features ([`095dfdf`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/095dfdf), [decision 4](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/blob/main/docs/decisions/0004-accounts-circles-friends.md)). I then guided the implementation through four tested steps covering accounts, circles capped at 25 members, direct friendships, and meetup visibility. The important change was not just adding login: it was making access rules part of the design and checking them as the app grew.
 
-Two choices shaped the line. It is plain `key=value`, not JSON, because a
-person reads it off a scrolling terminal mid-demo:
-`actor=amy#12 action=join_meetup meetup=7 result=denied reason=full`.
-And every outcome is written down, not just the status code, because many
-routes always redirect: a friend request accepted and one declined both
-answer 303, and the log is the only place that tells them apart.
+**Crit 9: using it myself.** Live updates use a bare “something changed” signal, with each page re-fetching its own data ([decision 3](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/blob/main/docs/decisions/0003-live-updates.md)). I tested the actual user flow instead of treating passing route tests as sufficient. That exposed two problems: friend requests didn't arrive live ([`fbeff10`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/fbeff10)), and circles were difficult to reach on a phone ([`aa946c6`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/aa946c6)).
+
+**Crit 10: readable from the outside.** A presenter had to narrate the app using only `flyctl logs`, but Buddy Up had just one startup line. I directed the agent to make requests observable, resulting in one `key=value` log line per request that records who did what and how it ended ([decision 6](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/blob/main/docs/decisions/0006-action-logging.md)). Reading the logs as a presenter exposed a leak: invite links appeared in full on a screen intended for a projector. I then had them masked ([`7daa380`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/7daa380)).
+
+**Final: people, not tests.** I gave three classmates a URL and a circle's code, then asked them to join its coffee meetup without help. Two finished in 45 and 60 seconds. The third stopped at 90 seconds, unsure what to do after joining the circle. Their ratings for how light it felt (1 = effortless, 5 = a chore) were 3, 4 and 2. The circle page showed invite tools and members but not upcoming activities, so I directed the agent to make the circle's meetups visible first ([`535d421`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/535d421), [`52bb3b4`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/52bb3b4)). A new classmate then completed the full flow in 50 seconds and rated it 1. This suggests the change may have helped, but one retest cannot prove that joining is easy for everyone.
 
 ## Agentic workflow
 
-I kept the same arrangement as crit 9: the agent proposes, I decide, it
-implements and tests, and nothing is committed until I say so.
+The agent proposes, I decide, it implements and tests, and nothing is committed until I approve it.
 
-**Directed.** The decisions with consequences were mine: logs a person can
-read rather than a machine; stdout rather than a database table, since Fly
-already keeps it; and no log line may carry a password, a note or a reply.
-That last one is enforced, not promised: `format()` in `src/log.ts`
-throws if a call site even names one of those fields. I also chose to keep
-the meetup's response to an outsider unchanged (the same 404 as "doesn't
-exist") while the log says plainly that they were refused
-([`7daa380`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/7daa380)).
+**Directed.** I used `CLAUDE.md` to set working rules, and decision records to document important choices. Claude could suggest solutions, but I remained responsible for deciding what to build and approving changes. For example, I decided an outsider sees the same 404 as "doesn't exist", while the log records the refusal.
 
-**Grounded.** Logging can't be seen over HTTP, so the app-facing tests
-couldn't check it. Instead the agent ran a scripted session with three
-accounts (a host, a member, an outsider), using a distinctive password,
-note, place and circle name, and then searched the log for each one. None
-appeared, while every line still named its actor, so the host, the member
-and the outsider could be told apart at a glance. `spec/log.test.ts` now tests the pieces that can be tested
-directly: masking, refusals, and the forbidden fields. All 97 tests pass.
+**Grounded.** I asked Claude to inspect the existing code and constraints before making changes. I also used the test suite and checked the running app rather than relying only on its explanations. Measured on Fly, live updates took up to 1.8 seconds, so I had them cut to under a second ([`5c61df8`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/5c61df8)).
 
-I then rehearsed the crit on the deployed app with three accounts in
-separate windows, reading only `flyctl logs`. The lines told the story on
-their own: leah posted meetup 68, a friend request was accepted and the
-other person's page refreshed within a third of a second, and anu, who was
-in neither leah's circle nor her friends, opened meetup 68's URL and got
-`status=404 action=view_meetup meetup=68 result=denied reason=not_visible`.
-He saw a page that said nothing exists; the log said he was stopped.
+**Corrected.** At Crit 8, Claude built and committed the whole app at once under my name. I had it undo those changes. Since then, it has needed my approval before writing or committing.
 
-Crit 9's live updates were also measured rather than assumed. Against the
-deployed app, a signal arrived in about 17 ms but a page re-fetch took up
-to 430 ms, so the delay meant to spread the load made the worst case about
-1.8 seconds, over the brief's "about a second". It is now 60–500 ms, worst
-case under a second ([`5c61df8`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/5c61df8)).
+## The readings
 
-**Corrected.** Reading that scripted log exposed a leak: invite links
-appeared in full (`path=/join/<code>`), and anyone who saw the code could
-join the circle. Crit 10 puts the log on a projector. The path is now
-`/join/[code]`, and the same commit made an outsider's refused attempt
-show as `result=denied reason=not_visible` instead of a bare 404
-([`7daa380`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/7daa380)).
+Robin Sloan's home-cooked app is made for a few people who already share a table. I agree that small software can have its own standard of good, and Buddy Up's is a meetup that happens, not growth. But Sloan's app needs no accounts because his users are his family. Mine began the same way, and Crit 8 showed that once the table holds more than one household, trust has to be built in.
 
-Two older assumptions were also wrong. Decision 3 had set the app's stream
-cap at 60 "to stay well clear" of Fly's limit without checking it; the
-proxy's default was 20 connections, so it would have refused page loads
-first. It now counts requests, with limits above the app's own
-([`5ef92d0`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/5ef92d0)). And the design pass had added Google Fonts without
-recording it, a request every visitor's browser makes to a third party.
-Writing it down showed that older browsers would send Google the full URL,
-which can name a private meetup, so the app now sets a strict referrer
-policy ([`307d845`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/307d845)).
+Clay Shirky's situated software is shaped by the group it is made for. Buddy Up is built around ANU students: Canberra time, nearby places, a week-ahead horizon, and circles small enough for people to know each other. I agree with designing for a specific community rather than everyone, but fitting a context does not prove that a product works. Whether meetups actually happen depends on a real group using it over weeks, which a prototype tested in crits cannot establish.
+
+Darius Kazemi argues that a small social space is a choice, not a failure to scale. I agree, and the 25-member cap, with no public meetups and no friends of friends, puts that choice into code. Where I differ is in how the space is kept safe. Kazemi emphasises people moderating their own community. I build safety rules into the code instead, checking visibility on every read and write and logging refusals, because a student project cannot rely on having someone constantly moderating it.
 
 ## Stack
 
-Node 24 runs TypeScript directly, with `node:sqlite` on a Fly volume and
-plain server-rendered forms ([decision 1](docs/decisions/0001-stack.md)).
-Crit 10 added no dependency: logging is `console.log` to stdout, which Fly
-captures and `flyctl logs` tails live.
-
-- **One process made logging simple.** Every request passes through one
-  handler, so a single hook writes one line per request, and each route
-  only adds what it decided. A mutating request is still one line.
-- **Live updates are the exception.** An SSE stream finishes only when the
-  browser disconnects, sometimes minutes later, so its subscribe or decline
-  is logged immediately instead.
-- **Scale-to-zero has a cost on the day.** For the crit 9 session I held
-  one machine awake so the pod wouldn't watch a cold start
-  ([`7196fed`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/7196fed)), then let it sleep again ([`294d804`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/294d804)). Every push to
-  `main` deploys, so the app the pod sees is always the latest commit.
+Node 24 runs TypeScript directly, `node:sqlite` stores data on a Fly volume, and plain server-rendered forms work without JavaScript ([decision 1](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/blob/main/docs/decisions/0001-stack.md)). This kept the app small and avoided adding a frontend framework or a separate database service for a single-machine student project. Keeping the pages, access checks and live-update mechanism in one application also made the behaviour easier to inspect and test. Every push to `main` deploys.
