@@ -152,6 +152,13 @@ button[disabled]{background:#D8CDBE;color:var(--muted);cursor:not-allowed}
 .next .label{margin:0;color:var(--c);font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.06em}
 .next .big-when{font-family:var(--display);font-weight:800;font-size:40px;line-height:1;margin:10px 0 0}
 .next .big-when a{color:inherit;text-decoration:none}
+/* A whole card opens its meetup: the card's own link stretches over it, and
+   buttons, forms and other links sit above that. Not on the meetup's own page. */
+.next,.later,.meetups.grid .meetup{position:relative}
+.next .big-when a::after,.later>a::after,.meetups.grid .meetup a.title::after{content:"";position:absolute;inset:0;z-index:0;border-radius:inherit}
+.next :is(button,form,input,textarea,select,label,.row a),.meetups.grid .meetup :is(button,form,input,textarea,select,label,a:not(.title),details,summary){position:relative;z-index:1}
+.next:hover,.later:has(>a):hover,.meetups.grid .meetup:hover{border-color:#D8CDBE;box-shadow:0 8px 22px rgba(60,40,20,.12)}
+.next:has(.big-when a:focus-visible),.later:has(>a:focus-visible),.meetups.grid .meetup:has(a.title:focus-visible){outline:2px solid var(--c,var(--accent));outline-offset:2px}
 .next .countdown{margin:4px 0 0;color:var(--c);font-weight:700}
 .next .countdown .date{color:var(--muted);font-weight:500}
 .next .big-place{font-size:18px;font-weight:700;margin:12px 0 0}
