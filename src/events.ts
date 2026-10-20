@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import * as log from "./log.ts";
 
 // Live updates are one process telling the browsers it is already serving that
 // something moved (docs/decisions/0001, Consequences). No pub/sub, no second
@@ -62,8 +63,28 @@ interface Stream {
   res: ServerResponse;
   topics: Set<string>;
   personId: number | null;
+  actor: string;
   ip: string;
   opened: number;
+  // why the server ended it, if it did; otherwise the browser went away
+  why?: "expired" | "not_draining" | "shutdown";
+  logged?: boolean;
+}
+
+// The other half of the `subscribe` line (decision 6): one line when a stream
+// ends, saying who, what they were watching and for how long.
+function logClose(stream: Stream): void {
+  if (stream.logged) return;
+  stream.logged = true;
+  const secs = Math.round((Date.now() - stream.opened) / 1000);
+  log.emit({
+    time: new Date().toISOString(),
+    actor: stream.actor,
+    action: "unsubscribe",
+    topics: [...stream.topics].join(","),
+    open_for: `${Math.floor(secs / 60)}m${secs % 60}s`,
+    reason: stream.why ?? "client_closed",
+  });
 }
 
 const streams = new Set<Stream>();
@@ -109,11 +130,12 @@ export function subscribe(
   res: ServerResponse,
   topics: Set<string>,
   personId: number | null,
+  actor = "anon",
 ): boolean {
   const ip = clientIp(req);
   if (atCap(personId, ip)) return false;
 
-  const stream: Stream = { res, topics, personId, ip, opened: Date.now() };
+  const stream: Stream = { res, topics, personId, actor, ip, opened: Date.now() };
   // Registered before the headers go out, so that "the client's fetch resolved"
   // means "the server already has me". The spec test relies on that ordering to
   // publish straight after connecting without sleeping first — don't reorder.
@@ -121,6 +143,7 @@ export function subscribe(
 
   res.on("close", () => {
     streams.delete(stream);
+    logClose(stream);
   });
 
   try {
@@ -143,6 +166,7 @@ export function subscribe(
 function push(stream: Stream, frame: string): void {
   try {
     if (stream.res.writableEnded || stream.res.writableLength > MAX_BUFFERED) {
+      stream.why ??= "not_draining";
       stream.res.destroy();
       streams.delete(stream);
       return;
@@ -163,11 +187,21 @@ export function publish(
   topics: string[],
   mayKnow: (personId: number | null) => boolean = () => true,
 ): void {
-  if (streams.size === 0) return;
   const frame = `event: change\ndata: ${JSON.stringify({ topics })}\n\n`;
+  let delivered = 0;
   for (const stream of [...streams]) {
-    if (topics.some((t) => stream.topics.has(t)) && mayKnow(stream.personId)) push(stream, frame);
+    if (topics.some((t) => stream.topics.has(t)) && mayKnow(stream.personId)) {
+      push(stream, frame);
+      delivered++;
+    }
   }
+  // Who caused it is on the request line just before; this says who was told.
+  log.emit({
+    time: new Date().toISOString(),
+    action: "broadcast",
+    topics: topics.join(","),
+    delivered,
+  });
 }
 
 // One timer for everyone rather than two per connection: fewer objects, and one
@@ -176,6 +210,7 @@ const sweep = setInterval(() => {
   const now = Date.now();
   for (const stream of [...streams]) {
     if (now - stream.opened > LIFETIME_MS) {
+      stream.why = "expired";
       stream.res.end();
       streams.delete(stream);
       continue;
@@ -192,6 +227,9 @@ sweep.unref();
 // retry delay staggers them instead.
 export function closeAll(): void {
   for (const stream of [...streams]) {
+    // logged now: the process exits before the sockets report closing
+    stream.why = "shutdown";
+    logClose(stream);
     try {
       stream.res.end(`retry: ${RETRY_MS}\n: bye\n\n`);
     } catch {

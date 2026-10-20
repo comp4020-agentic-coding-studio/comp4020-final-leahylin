@@ -239,7 +239,7 @@ async function handle(
     if (
       topics.size === 0 ||
       !me ||
-      !events.subscribe(req, res, topics, me?.id ?? null)
+      !events.subscribe(req, res, topics, me?.id ?? null, actor)
     ) {
       ctx.result = "declined";
       events.decline(res);
