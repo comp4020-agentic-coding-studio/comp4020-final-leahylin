@@ -21,20 +21,23 @@ actor=anu#15 action=view_meetup meetup=68 status=404 result=denied reason=not_vi
 
 | Event the checklist asks for | Logged? | How it shows up |
 | --- | --- | --- |
-| User connects / joins a room | Yes | `action=subscribe` when a page opens its live stream, with the topics it was allowed (a meetup, an activity, a person, a circle) |
-| User disconnects / leaves a room | **No** | A stream closing is not logged: the line is written when the stream is accepted, because `finish` only fires once it closes. Leaving a *meetup* (`leave_meetup`) is logged |
+| User connects / joins a room | Yes (**fixed** in [`8bbd07c`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/8bbd07c)) | `action=subscribe` when a page opens its live stream, with the topics it was allowed (a meetup, an activity, a person, a circle). Before the fix this line was never written for an accepted stream: it waited for `finish`, which an open stream never reaches. Confirmed on the deployed app in 3.8 |
+| User disconnects / leaves a room | Yes (**added** after the test) | `action=unsubscribe` when a stream ends, with its topics, `open_for=` and a `reason=`: `client_closed` (tab closed or hidden), `expired` (10-minute cap), `not_draining`, or `shutdown`. During 3.1–3.8 this wasn't logged and had to be read from a page's once-a-minute refreshes stopping. Leaving a *meetup* (`leave_meetup`) was already logged |
 | Server receives an action | Yes | One line per POST: `create_meetup`, `join_meetup`, `edit_meetup`, `add_friend`, `join_circle`, … with `result=` |
-| Server broadcasts an update | **No** | `publish()` doesn't log. The broadcast shows up indirectly, as each open page's follow-up GET of the same URL |
+| Server broadcasts an update | Yes (**added** after the test) | `action=broadcast topics=… delivered=N` after every write: which topics changed and how many open streams were told. The request line just before it says who caused it. During 3.1–3.8 this had to be read from each open page's follow-up GET |
 | Server rejects an action | Yes | `result=denied` with a `reason=` (`full`, `not_visible`, `not_host`, `closed`, …) |
 | Server sends a state snapshot to one user | Yes | The re-fetch GET after a signal is an ordinary page request, logged under that viewer's `actor=` |
 
-Gaps to decide on before the test: disconnects and broadcasts aren't logged,
-so those two have to be read from the re-fetch GETs.
+When the test ran, disconnects and broadcasts weren't logged, so those two
+were read from the re-fetch GETs. Both were added afterwards, so every row
+above can now be read straight from the log.
 
-**Found during the test:** no `action=subscribe` line appeared at all, although
-live updates were working. The line was written on the response's `finish`
-event, which an open stream never reaches. Fixed so an accepted stream is
-logged at once (see section 4).
+**Found during the test, and fixed:** in 3.1–3.6 no `action=subscribe` line
+appeared at all, although live updates were working. The line was written on
+the response's `finish` event, which an open stream never reaches. An accepted
+stream is now logged as soon as it opens
+([`8bbd07c`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/8bbd07c)),
+and 3.8, run after the fix, shows it.
 
 ## 2. Setup
 
@@ -132,25 +135,39 @@ logged at once (see section 4).
   (EventSource retry); pages then show the current state. Everything posted
   before the restart is still there, because it is in SQLite on the volume.
   Log: the startup line, then fresh `subscribe` lines from each open page.
-- **Observed:**
+- **Observed: as expected**, run after the log fixes were deployed, with A's
+  home page open. `flyctl machine restart` at 13:44:07: the app took SIGINT
+  and exited cleanly within a second, the volume remounted and checked clean,
+  and `buddy up listening on :8080` came at 13:44:12. In the 3 s between the
+  machine starting and Node listening, the proxy logged two
+  `instance refused connection` errors; Fly's hint about 127.0.0.1 doesn't
+  apply, since the same requests succeed from 13:44:12. A's page reconnected
+  on its own about 8 s later (13:44:20 GET, 13:44:21 `subscribe`) with the
+  same topics as before, including meetups 310 and 311, so nothing on the
+  volume was lost. Afterwards B logged in and subscribed (13:45:42); A opened
+  and saved 311's edit form (`open_edit` 13:46:04, `edit_meetup result=ok`
+  13:46:11.446) and B's page re-fetched 0.28 s later and showed the new place.
 
 ## 4. Summary
 
-3.1–3.6 behaved as expected; 3.7 was not run; 3.8 is still to run. Live
+3.1–3.6 and 3.8 behaved as expected; 3.7 was not run. Live
 updates reached the right people in 0.3–0.5 s and no one else, and the
 last-spot race let exactly one person in.
 
 Reading the log closely found three things to fix:
 
 1. **Successful `subscribe` lines were never written.** Fixed: an accepted
-   stream is logged as soon as it opens.
+   stream is logged as soon as it opens
+   ([`8bbd07c`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/commit/8bbd07c));
+   3.8 was run after the fix, and the reconnect shows in the log.
 2. **Opening the edit form was logged as an edit.** A GET of `/m/310/edit`
    read `action=edit_meetup result=ok`, so one edit looked like two. Fixed:
-   the form is now `action=open_edit`.
+   the form is now `action=open_edit` (same commit).
 3. **Icon requests looked like anonymous visits.** C's browser asked for
    `/favicon.ico` without the session cookie, so every page C opened added
    `actor=anon … /favicon.ico status=303` and a GET of `/login`. Fixed: the
-   icon request gets an empty 204, and pages declare an empty icon.
+   icon request gets an empty 204, and pages declare an empty icon (same
+   commit).
 
 Two things that look odd in the log but are by design: every open, visible
 page re-fetches once a minute (`TICK` in `src/html.ts`, so "in 20 hours"
