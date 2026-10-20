@@ -1558,6 +1558,12 @@ describe("signed out, the header offers only what's there", () => {
     expect(nav).not.toContain('href="/people"');
     expect(await get("/")).toContain('href="/people"');
   });
+
+  it("answers a browser's icon request without sending it to the login page", async () => {
+    const res = await fetch(new URL("/favicon.ico", baseUrl), { redirect: "manual" });
+    expect(res.status).toBe(204);
+    expect(await (await fetch(new URL("/", baseUrl))).text()).toContain('rel="icon"');
+  });
 });
 
 describe("live: friend requests and circles reach the people they're about", () => {

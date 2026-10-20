@@ -199,7 +199,10 @@ async function handle(
   // one line rather than one per decision point.
   const actor = me ? `${me.username}#${me.id}` : "anon";
   const ctx: log.Fields = {};
-  res.once("finish", () => {
+  let logged = false;
+  const writeLog = () => {
+    if (logged) return;
+    logged = true;
     // signed in, but asking for a meetup or circle they can't see
     if (me && res.statusCode === 404 && ctx.action === undefined)
       Object.assign(ctx, log.notVisible(path) ?? {});
@@ -211,7 +214,8 @@ async function handle(
       status: res.statusCode,
       ...ctx,
     });
-  });
+  };
+  res.once("finish", writeLog);
 
   // The live stream. Answers only in text/event-stream, including when it is
   // turning someone away — see events.decline for why a 503 would be worse
@@ -240,7 +244,10 @@ async function handle(
       ctx.result = "declined";
       events.decline(res);
     } else {
+      // An accepted stream stays open and never reaches `finish`, so its line
+      // is written now; a declined one ends at once and is logged on finish.
       ctx.result = "ok";
+      writeLog();
     }
     return;
   }
@@ -422,6 +429,14 @@ async function handle(
     ctx.result = "ok";
     if (token) db.deleteSession(token);
     return redirect(res, "/", { "set-cookie": sessionCookie(req, "", 0) });
+  }
+
+  // There is no icon. Some browsers ask for one without the session cookie,
+  // which would otherwise read as an anonymous visit bounced to /login.
+  if (path === "/favicon.ico") {
+    res.writeHead(204, { "cache-control": "public, max-age=86400" });
+    res.end();
+    return;
   }
 
   // Everything past here is for people who are signed in. Nothing is public.
@@ -964,7 +979,8 @@ async function handle(
     const meetup = db.meetupFor(Number(m[1]), me.id);
     if (!meetup) return notFound(res, who);
     if (!me) return redirect(res, `/m/${meetup.id}`);
-    ctx.action = "edit_meetup";
+    // Opening the form isn't an edit; only the POST is.
+    ctx.action = method === "POST" ? "edit_meetup" : "open_edit";
     ctx.meetup = meetup.id;
     const interest = findInterest(meetup.interest)!;
     const back = `/i/${meetup.interest}#m${meetup.id}`;

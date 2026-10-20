@@ -418,6 +418,7 @@ export function page(opts: {
 <html lang="en-AU">
 <head>
 <meta charset="utf-8">
+<link rel="icon" href="data:,">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(opts.title)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
