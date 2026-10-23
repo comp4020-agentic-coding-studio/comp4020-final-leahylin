@@ -490,13 +490,10 @@ export function interestPage(
         `<li>${esc(formatDay(m.starts_at))} · ${esc(m.place)} · ${m.came ? `${m.came} came` : `${m.going} signed up`}</li>`,
     )
     .join("")}</ul>`;
-  // Folded away on a phone, where the list matters more; open beside the form
-  // on a wide screen. Plain <details>, so it works without script.
-  const logPhone = past.length
-    ? `<details class="past mobile-only"><summary>Already happened (${past.length})</summary>${logList}</details>`
-    : "";
-  const logWide = past.length
-    ? `<section class="web-only"><h2>Already happened</h2>${logList}</section>`
+  // Right under what's coming up, on every screen: a sidebar under the long
+  // form was too easy to miss.
+  const log = past.length
+    ? `<section class="past"><h2>Already happened</h2>${logList}</section>`
     : "";
   return `
 <div class="cols">
@@ -505,11 +502,10 @@ export function interestPage(
 <p class="lede">${esc(interest.blurb)}</p>
 <h2>Coming up</h2>
 <div data-live="coming">${items}${off}</div>
-${logPhone}
+${log}
 </div>
 <aside class="side">
 ${form}
-${logWide}
 </aside>
 </div>
 <a class="fab" href="#host">+ Start one</a>`;

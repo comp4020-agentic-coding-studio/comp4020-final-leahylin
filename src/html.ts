@@ -184,7 +184,8 @@ input[type=number]{width:6rem}
 fieldset button[type=submit]{background:var(--ink);margin-top:14px}
 .error{background:#FDECEA;border:1px solid #F3B7AE;color:#8A1F11;padding:10px 12px;border-radius:12px;margin:10px 0}
 .empty{color:var(--muted);padding:18px;border:1px dashed #D8CDBE;border-radius:18px;text-align:center;background:var(--card)}
-.log{list-style:none;padding:0;margin:4px 0 0;color:var(--muted);font-size:14px}
+.log{list-style:none;padding:0;margin:4px 0 0;color:var(--muted);font-size:15px}
+.past{margin-top:28px}
 .log li{padding:6px 0;border-bottom:1px dotted #D8CDBE}
 details.past summary{cursor:pointer;color:var(--muted);padding:12px 0}
 .web-only{display:none}
