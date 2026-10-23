@@ -78,6 +78,8 @@ around a rule; argue for changing the README first.
 
 ## How to work
 
+- Propose before acting: ask before writing or changing a file, and commit
+  only when I say so. A change I haven't seen isn't mine to submit.
 - Small commits that each do one thing, with messages that say why.
 - When a decision trades something off (stack, what persists, what's left out),
   add or update a record in `docs/decisions/` and link it from `PROCESS.md`.
