@@ -75,7 +75,7 @@ and 3.8, run after the fix, shows it.
 - **Do:** A meetup with one spot left; two people tap I'm in together.
 - **Expected:** exactly one gets in; the other sees it's full. Log: one
   `join_meetup result=ok`, one `result=denied reason=full`. (The spec tests
-  the same race with five joiners.)
+  [the same race with five joiners](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/blob/main/spec/buddyup.test.ts#L194).)
 - **Observed: as expected.** A posted badminton meetup 311 with one spot
   left. B and C tapped I'm in 14 ms apart: B `join_meetup result=ok`
   (13:00:18.436), C `status=409 result=denied reason=full` (13:00:18.450).
