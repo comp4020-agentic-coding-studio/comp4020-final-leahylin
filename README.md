@@ -2,17 +2,17 @@
 
 **Find someone to do something with today.**
 
-An activity buddy is someone you know who's up for the same thing. Choose running, badminton, coffee or your own activity, then join or start a meetup with your circle or friends: *Tuesday, 6 pm · Black Mountain · 4 people · Easy pace*.
+An activity buddy is someone you know who's up for the same thing. Choose running, badminton, coffee or your own activity, then join or start a meetup: *Tuesday, 6 pm · Black Mountain · 4 people · Easy pace*.
 
 ## How to test
 
-Use two Chrome profiles. The first load can be slow.
+Use two Chrome profiles:
 
 1. **Accounts:** register one account per profile.
-2. **Multi-user:** in Profile A, create a circle and share its six-digit join code; join it in Profile B. Or add each other as friends by username.
-3. **Meetup:** in Profile A, create a meetup for the circle or for friends. In Profile B, open it and join.
-4. **Real-time:** keep the meetup open side by side. Leave and rejoin in B and watch A update live.
-5. **Persistence:** refresh both profiles. Everything should remain.
+2. **Multi-user:** in A, create a circle and share its join code; join it in B. Or add each other as friends by username.
+3. **Meetup:** in A, create a meetup for the circle or friends. In B, open it and join.
+4. **Real-time:** keep it open side by side. Leave and rejoin in B and watch A update live.
+5. **Persistence:** refresh both. Everything should remain.
 
 ## What good means here
 
@@ -37,12 +37,12 @@ ANU students who know people but rarely make plans: classmates, hallmates and cl
 - **Search, maps or recommendations:** a time-ordered list is enough.
 - **Public activity or friend lists:** activities surface through meetups ([decision 5](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/blob/main/docs/decisions/0005-custom-activities.md)); friend lists stay private.
 
-At Crit 8, I'd excluded accounts and friends to keep joining lightweight. A pod member pointed out that someone could end up alone with a stranger. I'd prioritised convenience over safety, so I added accounts, circles and friends ([decision 4](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/blob/main/docs/decisions/0004-accounts-circles-friends.md)).
+At Crit 8, I'd excluded accounts and friends to keep joining lightweight. A pod member pointed out someone could end up alone with a stranger, so I added accounts, circles and friends ([decision 4](https://github.com/comp4020-agentic-coding-studio/comp4020-final-leahylin/blob/main/docs/decisions/0004-accounts-circles-friends.md)).
 
 ## What persists and what doesn't
 
 - **Accounts** stay; **circles and friends** remain until removed.
-- **Meetups and attendance** persist; finished meetups move into a short log.
+- **Meetups and attendance** persist; finished meetups log briefly.
 - **Notes and replies** disappear two hours after the start.
 - **Leaving** removes attendance without recording who backed out.
 
