@@ -2,7 +2,7 @@
 
 **Find someone to do something with today.**
 
-An activity buddy is someone you know who's up for the same thing. Choose running, badminton, coffee or your own activity, then join or start a meetup: *Tuesday, 6 pm · Black Mountain · 4 people · Easy pace*.
+An activity buddy is someone you know who's up for the same thing. Choose running, badminton, coffee or your own activity, then join or start a meetup with your circle or friends: *Tuesday, 6 pm · Black Mountain · 4 people · Easy pace*.
 
 ## How to test
 
